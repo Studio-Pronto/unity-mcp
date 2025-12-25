@@ -16,6 +16,102 @@ namespace MCPForUnity.Editor.Helpers
     /// </summary> 
     public static class GameObjectSerializer
     {
+        // --- Helper Methods for Enhanced Serialization ---
+
+        /// <summary>
+        /// Cache for MonoBehaviour script paths to avoid repeated AssetDatabase lookups.
+        /// </summary>
+        private static readonly Dictionary<Type, string> _scriptPathCache = new Dictionary<Type, string>();
+
+        /// <summary>
+        /// Gets the full hierarchy path of a transform (e.g., "Player/Armature/Hips/Spine").
+        /// Walks UP the parent chain only - no recursion risk.
+        /// </summary>
+        private static string GetHierarchyPath(Transform t)
+        {
+            if (t == null) return null;
+            var parts = new List<string>();
+            Transform current = t;
+            while (current != null)
+            {
+                parts.Insert(0, current.name);
+                current = current.parent;
+            }
+            return string.Join("/", parts);
+        }
+
+        /// <summary>
+        /// Formats layer index with its name (e.g., "8 (Ragdoll)" instead of just "8").
+        /// </summary>
+        private static string GetLayerWithName(int layer)
+        {
+            string name = LayerMask.LayerToName(layer);
+            return string.IsNullOrEmpty(name) ? layer.ToString() : $"{layer} ({name})";
+        }
+
+        /// <summary>
+        /// Gets the script file path for a MonoBehaviour type (e.g., "Assets/Scripts/PlayerController.cs").
+        /// Uses caching to avoid repeated AssetDatabase lookups.
+        /// </summary>
+        private static string GetScriptPath(Type type)
+        {
+            if (type == null) return null;
+            if (!typeof(MonoBehaviour).IsAssignableFrom(type) && !typeof(ScriptableObject).IsAssignableFrom(type))
+                return null;
+
+            if (_scriptPathCache.TryGetValue(type, out var cached))
+                return cached;
+
+            string result = null;
+            try
+            {
+                var guids = AssetDatabase.FindAssets($"{type.Name} t:MonoScript");
+                foreach (var guid in guids)
+                {
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    var script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                    if (script != null && script.GetClass() == type)
+                    {
+                        result = path;
+                        break;
+                    }
+                }
+            }
+            catch { /* Silently fail - script path is optional enhancement */ }
+
+            _scriptPathCache[type] = result;
+            return result;
+        }
+
+        /// <summary>
+        /// Gets prefab instance information for a GameObject.
+        /// Returns null if not a prefab instance.
+        /// </summary>
+        private static object GetPrefabInfo(GameObject go)
+        {
+            if (go == null) return null;
+            try
+            {
+                if (!PrefabUtility.IsPartOfPrefabInstance(go))
+                    return null;
+
+                var source = PrefabUtility.GetCorrespondingObjectFromSource(go);
+                return new Dictionary<string, object>
+                {
+                    { "isPrefabInstance", true },
+                    { "status", PrefabUtility.GetPrefabInstanceStatus(go).ToString() },
+                    { "prefabAssetPath", source != null ? AssetDatabase.GetAssetPath(source) : null },
+                    { "hasOverrides", PrefabUtility.HasPrefabInstanceAnyOverrides(go, false) }
+                };
+            }
+            catch
+            {
+                return null; // Silently fail - prefab info is optional enhancement
+            }
+        }
+
+        // --- End Helper Methods ---
+
         // --- Data Serialization ---
 
         /// <summary>
@@ -31,6 +127,9 @@ namespace MCPForUnity.Editor.Helpers
                 instanceID = go.GetInstanceID(),
                 tag = go.tag,
                 layer = go.layer,
+                layerName = GetLayerWithName(go.layer),
+                hierarchyPath = GetHierarchyPath(go.transform),
+                prefabInfo = GetPrefabInfo(go),
                 activeSelf = go.activeSelf,
                 activeInHierarchy = go.activeInHierarchy,
                 isStatic = go.isStatic,
@@ -137,6 +236,7 @@ namespace MCPForUnity.Editor.Helpers
                 {
                     { "typeName", componentType.FullName },
                     { "instanceID", tr.GetInstanceID() },
+                    { "hierarchyPath", GetHierarchyPath(tr) },
                     // Manually extract known-safe properties. Avoid Quaternion 'rotation' and 'lossyScale'.
                     { "position", CreateTokenFromValue(tr.position, typeof(Vector3))?.ToObject<object>() ?? new JObject() },
                     { "localPosition", CreateTokenFromValue(tr.localPosition, typeof(Vector3))?.ToObject<object>() ?? new JObject() },
@@ -215,6 +315,7 @@ namespace MCPForUnity.Editor.Helpers
                 {
                     { "typeName", componentType.FullName },
                     { "instanceID", cam.GetInstanceID() },
+                    { "hierarchyPath", GetHierarchyPath(cam.transform) },
                     { "properties", cameraProperties }
                 };
             }
@@ -223,8 +324,16 @@ namespace MCPForUnity.Editor.Helpers
             var data = new Dictionary<string, object>
             {
                 { "typeName", componentType.FullName },
-                { "instanceID", c.GetInstanceID() }
+                { "instanceID", c.GetInstanceID() },
+                { "hierarchyPath", GetHierarchyPath(c.transform) }
             };
+
+            // Add script path for MonoBehaviours
+            var scriptPath = GetScriptPath(componentType);
+            if (scriptPath != null)
+            {
+                data["scriptPath"] = scriptPath;
+            }
 
             // --- Get Cached or Generate Metadata (using new cache key) ---
             Tuple<Type, bool> cacheKey = new Tuple<Type, bool>(componentType, includeNonPublicSerializedFields);
@@ -428,6 +537,29 @@ namespace MCPForUnity.Editor.Helpers
             return data;
         }
 
+        // Safe types that won't cause recursion
+        private static readonly HashSet<Type> _safeTypes = new HashSet<Type>
+        {
+            typeof(bool), typeof(byte), typeof(sbyte), typeof(short), typeof(ushort),
+            typeof(int), typeof(uint), typeof(long), typeof(ulong), typeof(float),
+            typeof(double), typeof(decimal), typeof(char), typeof(string),
+            typeof(Vector2), typeof(Vector3), typeof(Vector4), typeof(Quaternion),
+            typeof(Color), typeof(Color32), typeof(Rect), typeof(Bounds),
+            typeof(Vector2Int), typeof(Vector3Int), typeof(RectInt), typeof(BoundsInt),
+            typeof(LayerMask), typeof(AnimationCurve)
+        };
+
+        private static bool IsSafeType(Type type)
+        {
+            if (type == null) return false;
+            if (type.IsEnum) return true;
+            if (type.IsPrimitive) return true;
+            if (_safeTypes.Contains(type)) return true;
+            // Allow arrays/lists of safe primitive types only
+            if (type.IsArray && type.GetElementType().IsPrimitive) return true;
+            return false;
+        }
+
         // Helper function to decide how to serialize different types
         private static void AddSerializableValue(Dictionary<string, object> dict, string name, Type type, object value)
         {
@@ -435,6 +567,51 @@ namespace MCPForUnity.Editor.Helpers
             if (value == null)
             {
                 dict[name] = null;
+                return;
+            }
+
+            // Skip complex types that could cause infinite recursion
+            if (!IsSafeType(type))
+            {
+                // For Unity objects, store enriched reference info
+                if (value is UnityEngine.Object unityObj)
+                {
+                    var refInfo = new Dictionary<string, object>
+                    {
+                        { "instanceID", unityObj.GetInstanceID() },
+                        { "name", unityObj.name },
+                        { "type", type.Name }
+                    };
+
+                    // Add hierarchy path for scene objects (GameObjects and Components)
+                    try
+                    {
+                        if (unityObj is GameObject refGo)
+                        {
+                            refInfo["hierarchyPath"] = GetHierarchyPath(refGo.transform);
+                        }
+                        else if (unityObj is Component refComp && refComp.gameObject != null)
+                        {
+                            refInfo["gameObjectName"] = refComp.gameObject.name;
+                            refInfo["hierarchyPath"] = GetHierarchyPath(refComp.transform);
+                        }
+                    }
+                    catch { /* Silently fail - hierarchy info is optional */ }
+
+                    // Add asset path for assets (not scene objects)
+                    try
+                    {
+                        if (AssetDatabase.Contains(unityObj))
+                        {
+                            refInfo["assetPath"] = AssetDatabase.GetAssetPath(unityObj);
+                        }
+                    }
+                    catch { /* Silently fail - asset path is optional */ }
+
+                    dict[name] = refInfo;
+                    return;
+                }
+                // Skip other complex types entirely to prevent recursion
                 return;
             }
 
@@ -524,20 +701,44 @@ namespace MCPForUnity.Editor.Helpers
                 new ColorConverter(),
                 new RectConverter(),
                 new BoundsConverter(),
-                new Matrix4x4Converter(), // Fix #478: Safe Matrix4x4 serialization for Cinemachine
                 new UnityEngineObjectConverter() // Handles serialization of references
             },
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            MaxDepth = 5, // Prevent stack overflow from deep/circular structures
             // ContractResolver = new DefaultContractResolver { NamingStrategy = new CamelCaseNamingStrategy() } // Example if needed
         };
         private static readonly JsonSerializer _outputSerializer = JsonSerializer.Create(_outputSerializerSettings);
         // --- End Define custom JsonSerializerSettings ---
+
+        // Track visited objects to prevent infinite recursion
+        [ThreadStatic] private static HashSet<int> _visitedObjects;
+        [ThreadStatic] private static int _serializationDepth;
+        private const int MaxSerializationDepth = 5;
 
         // Helper to create JToken using the output serializer
         private static JToken CreateTokenFromValue(object value, Type type)
         {
             if (value == null) return JValue.CreateNull();
 
+            // Prevent infinite recursion with depth limit
+            if (_serializationDepth > MaxSerializationDepth)
+            {
+                if (value is UnityEngine.Object unityObj)
+                    return JToken.FromObject(new { instanceID = unityObj.GetInstanceID(), name = unityObj.name });
+                return JValue.CreateNull();
+            }
+
+            // Track visited Unity objects to break cycles
+            if (value is UnityEngine.Object uo)
+            {
+                if (_visitedObjects == null) _visitedObjects = new HashSet<int>();
+                int id = uo.GetInstanceID();
+                if (_visitedObjects.Contains(id))
+                    return JToken.FromObject(new { instanceID = id, name = uo.name, _circular = true });
+                _visitedObjects.Add(id);
+            }
+
+            _serializationDepth++;
             try
             {
                 // Use the pre-configured OUTPUT serializer instance
@@ -553,6 +754,19 @@ namespace MCPForUnity.Editor.Helpers
                 Debug.LogWarning($"[GameObjectSerializer] Unexpected error serializing value of type {type.FullName}: {e}. Skipping property/field.");
                 return null; // Indicate serialization failure
             }
+            finally
+            {
+                _serializationDepth--;
+            }
+        }
+
+        /// <summary>
+        /// Call at the start of a top-level serialization to reset tracking state.
+        /// </summary>
+        public static void ResetSerializationState()
+        {
+            _visitedObjects?.Clear();
+            _serializationDepth = 0;
         }
     }
 }

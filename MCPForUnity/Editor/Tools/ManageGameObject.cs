@@ -1203,7 +1203,10 @@ namespace MCPForUnity.Editor.Tools
 
             try
             {
-                // --- Get components, immediately copy to list, and null original array --- 
+                // Reset serialization state to prevent infinite recursion
+                Helpers.GameObjectSerializer.ResetSerializationState();
+
+                // --- Get components, immediately copy to list, and null original array ---
                 Component[] originalComponents = targetGo.GetComponents<Component>();
                 List<Component> componentsToIterate = new List<Component>(originalComponents ?? Array.Empty<Component>()); // Copy immediately, handle null case
                 int componentCount = componentsToIterate.Count;
