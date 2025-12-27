@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Reflection;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor; // Required for AssetDatabase and EditorUtility
@@ -298,6 +299,28 @@ namespace MCPForUnity.Runtime.Serialization
             if (reader.TokenType == JsonToken.StartObject)
             {
                 JObject jo = JObject.Load(reader);
+
+                // Handle find instruction for setting object references via component_properties
+                // e.g., {"find": "Player", "method": "by_name"} or {"find": "Player", "component": "Health"}
+                if (jo.TryGetValue("find", out JToken findToken))
+                {
+                    // Call ManageGameObject.FindObjectByInstruction via reflection
+                    // (it's in Editor assembly, this file is in Runtime)
+                    var mgType = Type.GetType("MCPForUnity.Editor.Tools.ManageGameObject, MCPForUnity.Editor");
+                    if (mgType != null)
+                    {
+                        var method = mgType.GetMethod("FindObjectByInstruction",
+                            BindingFlags.Public | BindingFlags.Static);
+                        if (method != null)
+                        {
+                            var result = method.Invoke(null, new object[] { jo, objectType });
+                            return result as UnityEngine.Object;
+                        }
+                    }
+                    Debug.LogWarning($"[UnityEngineObjectConverter] Could not resolve FindObjectByInstruction for find instruction: {jo}");
+                    return null;
+                }
+
                 if (jo.TryGetValue("instanceID", out JToken idToken) && idToken.Type == JTokenType.Integer)
                 {
                     int instanceId = idToken.ToObject<int>();
