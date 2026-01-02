@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
@@ -15,7 +16,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
     /// </summary>
     public static class ManagePrefabs
     {
-        private const string SupportedActions = "open_stage, close_stage, save_open_stage, create_from_gameobject";
+        private const string SupportedActions = "open_stage, close_stage, save_open_stage, create_from_gameobject, get_hierarchy";
 
         public static object HandleCommand(JObject @params)
         {
@@ -42,6 +43,8 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                         return SaveOpenStage();
                     case "create_from_gameobject":
                         return CreatePrefabFromGameObject(@params);
+                    case "get_hierarchy":
+                        return GetPrefabStageHierarchy(@params);
                     default:
                         return new ErrorResponse($"Unknown action: '{action}'. Valid actions are: {SupportedActions}.");
                 }
@@ -272,6 +275,194 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                 mode = stage.mode.ToString(),
                 isDirty = stage.scene.isDirty
             };
+        }
+
+        private static object GetPrefabStageHierarchy(JObject @params)
+        {
+            try
+            {
+                PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
+                if (stage == null || stage.prefabContentsRoot == null)
+                {
+                    return new ErrorResponse("No prefab stage is currently open. Use open_stage first.");
+                }
+
+                // Parse paging parameters
+                int? ParseInt(JToken t)
+                {
+                    if (t == null || t.Type == JTokenType.Null) return null;
+                    var s = t.ToString().Trim();
+                    if (string.IsNullOrEmpty(s)) return null;
+                    if (int.TryParse(s, out var i)) return i;
+                    return null;
+                }
+
+                bool? ParseBool(JToken t)
+                {
+                    if (t == null || t.Type == JTokenType.Null) return null;
+                    if (t.Type == JTokenType.Boolean) return t.Value<bool>();
+                    var s = t.ToString().Trim().ToLowerInvariant();
+                    if (s == "true" || s == "1") return true;
+                    if (s == "false" || s == "0") return false;
+                    return null;
+                }
+
+                int pageSize = Mathf.Clamp(ParseInt(@params["pageSize"] ?? @params["page_size"]) ?? 50, 1, 500);
+                int cursor = Mathf.Max(0, ParseInt(@params["cursor"]) ?? 0);
+                bool includeTransform = ParseBool(@params["includeTransform"] ?? @params["include_transform"]) ?? false;
+                JToken parentToken = @params["parent"];
+
+                GameObject root = stage.prefabContentsRoot;
+                List<GameObject> nodes;
+                string scope;
+
+                if (parentToken == null || parentToken.Type == JTokenType.Null)
+                {
+                    // Return only the prefab root (consistent with manage_scene returning scene roots)
+                    // User can drill down by specifying parent=<root_name> to get children
+                    nodes = new List<GameObject> { root };
+                    scope = "prefab_root";
+                }
+                else
+                {
+                    // Find the parent GameObject within the prefab
+                    GameObject parentGo = FindGameObjectInPrefab(parentToken, root);
+                    if (parentGo == null)
+                    {
+                        return new ErrorResponse($"Parent GameObject '{parentToken}' not found in prefab stage.");
+                    }
+                    nodes = new List<GameObject>(parentGo.transform.childCount);
+                    foreach (Transform child in parentGo.transform)
+                    {
+                        if (child != null) nodes.Add(child.gameObject);
+                    }
+                    scope = "children";
+                }
+
+                int total = nodes.Count;
+                if (cursor > total) cursor = total;
+                int end = Mathf.Min(total, cursor + pageSize);
+
+                var items = new List<object>(Mathf.Max(0, end - cursor));
+                for (int i = cursor; i < end; i++)
+                {
+                    var go = nodes[i];
+                    if (go == null) continue;
+                    items.Add(BuildGameObjectSummary(go, includeTransform));
+                }
+
+                bool truncated = end < total;
+                string nextCursor = truncated ? end.ToString() : null;
+
+                var payload = new
+                {
+                    scope = scope,
+                    assetPath = stage.assetPath,
+                    prefabRootName = root.name,
+                    cursor = cursor,
+                    pageSize = pageSize,
+                    next_cursor = nextCursor,
+                    truncated = truncated,
+                    total = total,
+                    items = items,
+                };
+
+                return new SuccessResponse($"Retrieved prefab stage hierarchy for '{stage.assetPath}'.", payload);
+            }
+            catch (Exception e)
+            {
+                McpLog.Error($"[ManagePrefabs] get_hierarchy failed: {e}");
+                return new ErrorResponse($"Error getting prefab hierarchy: {e.Message}");
+            }
+        }
+
+        private static GameObject FindGameObjectInPrefab(JToken targetToken, GameObject root)
+        {
+            if (targetToken == null || targetToken.Type == JTokenType.Null) return null;
+
+            string target = targetToken.ToString();
+            if (string.IsNullOrEmpty(target)) return null;
+
+            // Check if it's an instance ID
+            if (int.TryParse(target, out int instanceId))
+            {
+                var obj = EditorUtility.InstanceIDToObject(instanceId);
+                if (obj is GameObject go) return go;
+                if (obj is Component c) return c.gameObject;
+            }
+
+            // Path-based search (e.g., "Root/Child/GrandChild")
+            if (target.Contains("/"))
+            {
+                Transform current = root.transform;
+                string[] parts = target.Split('/');
+                int startIndex = (parts[0] == root.name) ? 1 : 0;
+
+                for (int i = startIndex; i < parts.Length; i++)
+                {
+                    Transform child = current.Find(parts[i]);
+                    if (child == null) return null;
+                    current = child;
+                }
+                return current.gameObject;
+            }
+
+            // Name-based search
+            if (root.name == target) return root;
+            foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name == target) return t.gameObject;
+            }
+
+            return null;
+        }
+
+        private static object BuildGameObjectSummary(GameObject go, bool includeTransform)
+        {
+            if (go == null) return null;
+
+            int childCount = go.transform != null ? go.transform.childCount : 0;
+
+            var d = new Dictionary<string, object>
+            {
+                { "name", go.name },
+                { "instanceID", go.GetInstanceID() },
+                { "activeSelf", go.activeSelf },
+                { "activeInHierarchy", go.activeInHierarchy },
+                { "tag", go.tag },
+                { "layer", go.layer },
+                { "isStatic", go.isStatic },
+                { "path", GetGameObjectPath(go) },
+                { "childCount", childCount },
+                { "childrenTruncated", childCount > 0 },
+                { "childrenCursor", childCount > 0 ? "0" : null },
+            };
+
+            if (includeTransform && go.transform != null)
+            {
+                var t = go.transform;
+                d["transform"] = new
+                {
+                    position = new[] { t.localPosition.x, t.localPosition.y, t.localPosition.z },
+                    rotation = new[] { t.localRotation.eulerAngles.x, t.localRotation.eulerAngles.y, t.localRotation.eulerAngles.z },
+                    scale = new[] { t.localScale.x, t.localScale.y, t.localScale.z },
+                };
+            }
+
+            return d;
+        }
+
+        private static string GetGameObjectPath(GameObject go)
+        {
+            if (go == null) return string.Empty;
+            var names = new Stack<string>();
+            Transform t = go.transform;
+            while (t != null)
+            {
+                names.Push(t.name);
+                t = t.parent;
+            }
+            return string.Join("/", names);
         }
 
     }
