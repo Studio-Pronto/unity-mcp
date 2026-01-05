@@ -226,7 +226,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
             if (!Directory.Exists(fullDirectory))
             {
                 Directory.CreateDirectory(fullDirectory);
-                AssetDatabase.Refresh();
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             }
         }
 

@@ -594,7 +594,7 @@ namespace MCPForUnity.Editor.Tools
                     )
                     {
                         System.IO.Directory.CreateDirectory(directoryPath);
-                        AssetDatabase.Refresh(); // Refresh asset database to recognize the new folder
+                        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport); // Refresh asset database to recognize the new folder
                         Debug.Log(
                             $"[ManageGameObject.Create] Created directory for prefab: {directoryPath}"
                         );
@@ -1458,7 +1458,11 @@ namespace MCPForUnity.Editor.Tools
             {
                 var compToken = componentsToAddArray.First;
                 if (compToken.Type == JTokenType.String)
+                {
                     typeName = compToken.ToString();
+                    // Check for properties in top-level componentProperties parameter
+                    properties = @params["componentProperties"]?[typeName] as JObject;
+                }
                 else if (compToken is JObject compObj)
                 {
                     typeName = compObj["typeName"]?.ToString();
