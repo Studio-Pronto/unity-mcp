@@ -96,7 +96,9 @@ async def manage_gameobject(
     # Removed session_state import
     unity_instance = get_unity_instance_from_context(ctx)
 
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    # Only refresh for mutating actions; read-only actions (find, get_components, get_component) don't need it
+    is_read_only = action in ("find", "get_components", "get_component")
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=not is_read_only)
     if gate is not None:
         return gate.model_dump()
 

@@ -941,7 +941,8 @@ namespace MCPForUnity.Editor.Tools
                 );
             }
 
-            EditorUtility.SetDirty(targetGo); // Mark scene as dirty
+            EditorUtility.SetDirty(targetGo);
+            MarkSceneOrPrefabDirty(targetGo);
             // Use the new serializer helper
             return new SuccessResponse(
                 $"GameObject '{targetGo.name}' modified successfully.",
@@ -1028,9 +1029,9 @@ namespace MCPForUnity.Editor.Tools
                 duplicatedGo.transform.SetParent(sourceGo.transform.parent, true);
             }
 
-            // Mark scene dirty
+            // Mark scene or prefab stage dirty
             EditorUtility.SetDirty(duplicatedGo);
-            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            MarkSceneOrPrefabDirty(duplicatedGo);
 
             Selection.activeGameObject = duplicatedGo;
 
@@ -1109,9 +1110,9 @@ namespace MCPForUnity.Editor.Tools
 
             targetGo.transform.position = newPosition;
 
-            // Mark scene dirty
+            // Mark scene or prefab stage dirty
             EditorUtility.SetDirty(targetGo);
-            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            MarkSceneOrPrefabDirty(targetGo);
 
             return new SuccessResponse(
                 $"Moved '{targetGo.name}' relative to '{referenceGo.name}'.",
@@ -1482,6 +1483,7 @@ namespace MCPForUnity.Editor.Tools
                 return addResult; // Return error
 
             EditorUtility.SetDirty(targetGo);
+            MarkSceneOrPrefabDirty(targetGo);
             // Use the new serializer helper
             return new SuccessResponse(
                 $"Component '{typeName}' added to '{targetGo.name}'.",
@@ -1529,6 +1531,7 @@ namespace MCPForUnity.Editor.Tools
                 return removeResult; // Return error
 
             EditorUtility.SetDirty(targetGo);
+            MarkSceneOrPrefabDirty(targetGo);
             // Use the new serializer helper
             return new SuccessResponse(
                 $"Component '{typeName}' removed from '{targetGo.name}'.",
@@ -1578,6 +1581,7 @@ namespace MCPForUnity.Editor.Tools
                 return setResult; // Return error
 
             EditorUtility.SetDirty(targetGo);
+            MarkSceneOrPrefabDirty(targetGo);
             // Use the new serializer helper
             return new SuccessResponse(
                 $"Properties set for component '{compName}' on '{targetGo.name}'.",
@@ -1703,9 +1707,25 @@ namespace MCPForUnity.Editor.Tools
                     break;
                 case "by_path":
                     // Path is relative to scene root or rootSearchObject
-                    Transform foundTransform = rootSearchObject
-                        ? rootSearchObject.transform.Find(searchTerm)
-                        : GameObject.Find(searchTerm)?.transform;
+                    // Check prefab stage first since GameObject.Find doesn't work there
+                    Transform foundTransform = null;
+                    if (rootSearchObject != null)
+                    {
+                        foundTransform = rootSearchObject.transform.Find(searchTerm);
+                    }
+                    else
+                    {
+                        var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+                        if (prefabStage != null && prefabStage.prefabContentsRoot != null)
+                        {
+                            // Handle path search within prefab stage
+                            foundTransform = FindTransformByPathInPrefab(searchTerm, prefabStage.prefabContentsRoot);
+                        }
+                        else
+                        {
+                            foundTransform = GameObject.Find(searchTerm)?.transform;
+                        }
+                    }
                     if (foundTransform != null)
                         results.Add(foundTransform.gameObject);
                     break;
@@ -1738,22 +1758,38 @@ namespace MCPForUnity.Editor.Tools
                     Type componentType = FindType(searchTerm);
                     if (componentType != null)
                     {
-                        // Determine FindObjectsInactive based on the searchInactive flag
-                        FindObjectsInactive findInactive = searchInactive
-                            ? FindObjectsInactive.Include
-                            : FindObjectsInactive.Exclude;
-                        // Replace FindObjectsOfType with FindObjectsByType, specifying the sorting mode and inactive state
-                        var searchPoolComp = rootSearchObject
-                            ? rootSearchObject
+                        IEnumerable<GameObject> searchPoolComp;
+                        if (rootSearchObject != null)
+                        {
+                            searchPoolComp = rootSearchObject
                                 .GetComponentsInChildren(componentType, searchInactive)
-                                .Select(c => (c as Component).gameObject)
-                            : UnityEngine
-                                .Object.FindObjectsByType(
-                                    componentType,
-                                    findInactive,
-                                    FindObjectsSortMode.None
-                                )
                                 .Select(c => (c as Component).gameObject);
+                        }
+                        else
+                        {
+                            // Check prefab stage first since FindObjectsByType doesn't work there
+                            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+                            if (prefabStage != null && prefabStage.prefabContentsRoot != null)
+                            {
+                                searchPoolComp = prefabStage.prefabContentsRoot
+                                    .GetComponentsInChildren(componentType, searchInactive)
+                                    .Select(c => (c as Component).gameObject);
+                            }
+                            else
+                            {
+                                // Determine FindObjectsInactive based on the searchInactive flag
+                                FindObjectsInactive findInactive = searchInactive
+                                    ? FindObjectsInactive.Include
+                                    : FindObjectsInactive.Exclude;
+                                searchPoolComp = UnityEngine
+                                    .Object.FindObjectsByType(
+                                        componentType,
+                                        findInactive,
+                                        FindObjectsSortMode.None
+                                    )
+                                    .Select(c => (c as Component).gameObject);
+                            }
+                        }
                         results.AddRange(searchPoolComp.Where(go => go != null)); // Ensure GO is valid
                     }
                     else
@@ -1776,7 +1812,19 @@ namespace MCPForUnity.Editor.Tools
                             break;
                         }
                     }
-                    GameObject objByPath = GameObject.Find(searchTerm);
+                    // Try path-based search - check prefab stage first
+                    GameObject objByPath = null;
+                    var prefabStageForPath = PrefabStageUtility.GetCurrentPrefabStage();
+                    if (prefabStageForPath != null && prefabStageForPath.prefabContentsRoot != null)
+                    {
+                        var foundPathTransform = FindTransformByPathInPrefab(searchTerm, prefabStageForPath.prefabContentsRoot);
+                        if (foundPathTransform != null)
+                            objByPath = foundPathTransform.gameObject;
+                    }
+                    else
+                    {
+                        objByPath = GameObject.Find(searchTerm);
+                    }
                     if (objByPath != null)
                     {
                         results.Add(objByPath);
@@ -1803,8 +1851,19 @@ namespace MCPForUnity.Editor.Tools
         }
 
         // Helper to get all scene objects efficiently
+        // When a prefab stage is open, returns objects from the prefab stage instead of the scene
         private static IEnumerable<GameObject> GetAllSceneObjects(bool includeInactive)
         {
+            // Check if we're in a prefab editing stage first
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (prefabStage != null && prefabStage.prefabContentsRoot != null)
+            {
+                // Return all GameObjects within the prefab stage
+                return prefabStage.prefabContentsRoot
+                    .GetComponentsInChildren<Transform>(includeInactive)
+                    .Select(t => t.gameObject);
+            }
+
             // SceneManager.GetActiveScene().GetRootGameObjects() is faster than FindObjectsOfType<GameObject>()
             var rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
             var allObjects = new List<GameObject>();
@@ -1816,6 +1875,67 @@ namespace MCPForUnity.Editor.Tools
                 );
             }
             return allObjects;
+        }
+
+        /// <summary>
+        /// Marks the appropriate scene or prefab stage as dirty after modifications.
+        /// </summary>
+        private static void MarkSceneOrPrefabDirty(GameObject modifiedObject)
+        {
+            if (modifiedObject == null)
+                return;
+
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (prefabStage != null)
+            {
+                // Mark the prefab stage scene as dirty
+                EditorSceneManager.MarkSceneDirty(prefabStage.scene);
+            }
+            else
+            {
+                // Mark the regular scene as dirty
+                EditorSceneManager.MarkSceneDirty(modifiedObject.scene);
+            }
+        }
+
+        /// <summary>
+        /// Finds a Transform by path within a prefab root.
+        /// Handles both absolute paths (starting with root name) and relative paths.
+        /// </summary>
+        private static Transform FindTransformByPathInPrefab(string path, GameObject prefabRoot)
+        {
+            if (string.IsNullOrEmpty(path) || prefabRoot == null)
+                return null;
+
+            // Handle paths starting with "/" (absolute from root)
+            string cleanPath = path.TrimStart('/');
+
+            // Check if the path starts with the prefab root name
+            string[] parts = cleanPath.Split('/');
+            int startIndex = 0;
+
+            // If path matches root name exactly, return root
+            if (parts.Length == 1 && parts[0] == prefabRoot.name)
+                return prefabRoot.transform;
+
+            // If path starts with root name, skip it
+            if (parts.Length > 0 && parts[0] == prefabRoot.name)
+                startIndex = 1;
+
+            // Navigate through the hierarchy
+            Transform current = prefabRoot.transform;
+            for (int i = startIndex; i < parts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(parts[i]))
+                    continue;
+
+                Transform child = current.Find(parts[i]);
+                if (child == null)
+                    return null;
+                current = child;
+            }
+
+            return current;
         }
 
         /// <summary>
