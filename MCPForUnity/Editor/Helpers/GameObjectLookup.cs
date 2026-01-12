@@ -3,14 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace MCPForUnity.Editor.Helpers
 {
     /// <summary>
-    /// Utility class for finding and looking up GameObjects in the scene.
+    /// Utility class for finding and looking up GameObjects in the scene or Prefab Stage.
     /// Provides search functionality by name, tag, layer, component, path, and instance ID.
+    /// When a prefab is open in isolation mode (Prefab Stage), searches within the prefab.
     /// </summary>
     public static class GameObjectLookup
     {
@@ -245,10 +247,26 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Gets all GameObjects in the current scene.
+        /// Gets all GameObjects in the current context (Prefab Stage if open, otherwise active scene).
         /// </summary>
         public static IEnumerable<GameObject> GetAllSceneObjects(bool includeInactive)
         {
+            // Check if we're in Prefab Stage (editing a prefab in isolation)
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (prefabStage != null)
+            {
+                var prefabRoot = prefabStage.prefabContentsRoot;
+                if (prefabRoot != null)
+                {
+                    foreach (var go in GetObjectAndDescendants(prefabRoot, includeInactive))
+                    {
+                        yield return go;
+                    }
+                }
+                yield break;
+            }
+
+            // Not in Prefab Stage, search the active scene
             var scene = SceneManager.GetActiveScene();
             if (!scene.IsValid())
                 yield break;
@@ -260,6 +278,45 @@ namespace MCPForUnity.Editor.Helpers
                 {
                     yield return go;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Checks if we're currently editing a prefab in isolation mode.
+        /// </summary>
+        public static bool IsInPrefabStage()
+        {
+            return PrefabStageUtility.GetCurrentPrefabStage() != null;
+        }
+
+        /// <summary>
+        /// Gets the root GameObject of the current Prefab Stage, or null if not in a Prefab Stage.
+        /// </summary>
+        public static GameObject GetPrefabStageRoot()
+        {
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            return prefabStage?.prefabContentsRoot;
+        }
+
+        /// <summary>
+        /// Marks the appropriate scene as dirty (Prefab Stage scene or regular scene).
+        /// Use this after modifying GameObjects to ensure changes are saved.
+        /// </summary>
+        public static void MarkSceneOrPrefabDirty(GameObject modifiedObject)
+        {
+            if (modifiedObject == null)
+                return;
+
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (prefabStage != null)
+            {
+                // Mark the prefab stage scene as dirty
+                EditorSceneManager.MarkSceneDirty(prefabStage.scene);
+            }
+            else
+            {
+                // Mark the regular scene as dirty
+                EditorSceneManager.MarkSceneDirty(modifiedObject.scene);
             }
         }
 

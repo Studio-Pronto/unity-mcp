@@ -62,7 +62,7 @@ namespace MCPForUnity.Editor.Tools.GameObjects
             targetGo.transform.position = newPosition;
 
             EditorUtility.SetDirty(targetGo);
-            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            GameObjectLookup.MarkSceneOrPrefabDirty(targetGo);
 
             return new SuccessResponse(
                 $"Moved '{targetGo.name}' relative to '{referenceGo.name}'.",
