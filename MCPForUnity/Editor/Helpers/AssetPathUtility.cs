@@ -163,15 +163,8 @@ namespace MCPForUnity.Editor.Helpers
                 return sourceOverride;
             }
 
-            // Default to git URL for fork (upstream uses PyPI mcpforunityserver)
-            string version = GetPackageVersion();
-            if (version == "unknown")
-            {
-                // Fall back to main repo without pinned version so configs remain valid in test scenarios
-                return "git+https://github.com/vbucc/unity-mcp#subdirectory=Server";
-            }
-
-            return $"git+https://github.com/vbucc/unity-mcp@v{version}#subdirectory=Server";
+            // Fork always uses #main since enhancements are ahead of upstream version tags
+            return "git+https://github.com/vbucc/unity-mcp#subdirectory=Server";
         }
 
         /// <summary>
