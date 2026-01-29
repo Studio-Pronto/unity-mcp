@@ -258,6 +258,12 @@ Scene Setup:
 - Create prefabs with `manage_asset` for reusable GameObjects
 - Use `manage_scene` to load, save, and query scene information
 
+Prefab Stage Editing:
+- Use `manage_prefabs(action="open_stage", prefab_path="...")` to open a prefab for isolated editing
+- While in Prefab Stage, ALL `find_gameobjects` and `manage_gameobject` operations automatically target the prefab contents instead of the scene
+- Use `manage_prefabs(action="save_open_stage")` to save changes, then `close_stage` to exit
+- Check `mcpforunity://editor/prefab-stage` resource to see if a prefab is currently open
+
 Path Conventions:
 - Unless specified otherwise, all paths are relative to the project's `Assets/` folder
 - Use forward slashes (/) in paths for cross-platform compatibility

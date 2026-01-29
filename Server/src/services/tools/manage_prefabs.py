@@ -11,7 +11,9 @@ from services.tools.utils import coerce_bool, coerce_int
 
 
 @mcp_for_unity_tool(
-    description="Performs prefab operations (open_stage, close_stage, save_open_stage, create_from_gameobject, get_hierarchy).",
+    description="Performs prefab operations (open_stage, close_stage, save_open_stage, create_from_gameobject, get_hierarchy). "
+                "IMPORTANT: When a prefab is open via open_stage, all find_gameobjects and manage_gameobject operations "
+                "automatically target the prefab contents instead of the scene.",
     annotations=ToolAnnotations(
         title="Manage Prefabs",
         destructiveHint=True,

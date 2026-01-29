@@ -42,7 +42,10 @@ async def manage_components(
     # For add/set_property - multiple properties
     properties: Annotated[
         dict[str, Any],
-        "Dictionary of property names to values. Example: {\"mass\": 5.0, \"useGravity\": false}"
+        "Dictionary of property names to values. Example: {\"mass\": 5.0, \"useGravity\": false}. "
+        "For object references, use find syntax: {\"player\": {\"find\": \"Player\", \"method\": \"by_name\"}} "
+        "or with component: {\"targetHealth\": {\"find\": \"Player\", \"component\": \"Health\"}}. "
+        "Find methods: by_name, by_path, by_tag, by_layer."
     ] | None = None,
 ) -> dict[str, Any]:
     """
@@ -50,7 +53,7 @@ async def manage_components(
 
     Actions:
     - add: Add a new component to a GameObject
-    - remove: Remove a component from a GameObject  
+    - remove: Remove a component from a GameObject
     - set_property: Set one or more properties on a component
 
     Examples:
@@ -58,6 +61,8 @@ async def manage_components(
     - Remove BoxCollider: action="remove", target=-12345, component_type="BoxCollider"
     - Set single property: action="set_property", target="Enemy", component_type="Rigidbody", property="mass", value=5.0
     - Set multiple properties: action="set_property", target="Enemy", component_type="Rigidbody", properties={"mass": 5.0, "useGravity": false}
+    - Set object reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"player": {"find": "Player", "method": "by_name"}}
+    - Set component reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"targetHealth": {"find": "Player", "component": "Health"}}
     """
     unity_instance = get_unity_instance_from_context(ctx)
 
