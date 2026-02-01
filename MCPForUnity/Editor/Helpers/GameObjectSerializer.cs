@@ -758,6 +758,71 @@ namespace MCPForUnity.Editor.Helpers
             return false;
         }
 
+        /// <summary>
+        /// Checks if a type is a [Serializable] struct (value type with SerializableAttribute).
+        /// </summary>
+        private static bool IsSerializableStruct(Type type)
+        {
+            if (type == null) return false;
+            if (!type.IsValueType || type.IsPrimitive || type.IsEnum) return false;
+            return type.IsDefined(typeof(System.SerializableAttribute), false);
+        }
+
+        /// <summary>
+        /// Serializes a [Serializable] struct to a dictionary, handling nested UnityEngine.Object references.
+        /// </summary>
+        /// <param name="value">The struct value</param>
+        /// <param name="structType">The struct's Type</param>
+        /// <param name="depth">Current recursion depth (max 3)</param>
+        /// <returns>Dictionary representation of the struct</returns>
+        private static Dictionary<string, object> SerializeStructValue(object value, Type structType, int depth = 0)
+        {
+            const int MaxDepth = 3;
+            if (value == null || depth > MaxDepth) return null;
+
+            var result = new Dictionary<string, object>();
+            var fields = structType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            foreach (var field in fields)
+            {
+                // Skip non-serialized fields
+                if (!field.IsPublic && !field.IsDefined(typeof(SerializeField), true)) continue;
+                if (field.IsDefined(typeof(NonSerializedAttribute), true)) continue;
+
+                try
+                {
+                    object fieldValue = field.GetValue(value);
+                    Type fieldType = field.FieldType;
+
+                    if (fieldValue == null)
+                    {
+                        result[field.Name] = null;
+                    }
+                    else if (IsSafeType(fieldType))
+                    {
+                        JToken token = CreateTokenFromValue(fieldValue, fieldType);
+                        if (token != null)
+                            result[field.Name] = ConvertJTokenToPlainObject(token);
+                    }
+                    else if (fieldValue is UnityEngine.Object unityObj)
+                    {
+                        result[field.Name] = SerializeUnityObjectReference(unityObj);
+                    }
+                    else if (IsSerializableStruct(fieldType))
+                    {
+                        result[field.Name] = SerializeStructValue(fieldValue, fieldType, depth + 1);
+                    }
+                    // Skip other complex types
+                }
+                catch (Exception ex)
+                {
+                    McpLog.Warn($"[SerializeStructValue] Error serializing field '{field.Name}': {ex.Message}");
+                }
+            }
+
+            return result;
+        }
+
         // Helper function to decide how to serialize different types
         private static void AddSerializableValue(Dictionary<string, object> dict, string name, Type type, object value)
         {
@@ -799,6 +864,42 @@ namespace MCPForUnity.Editor.Helpers
                     }
                     dict[name] = serializedArray;
                     return;
+                }
+
+                // Handle arrays of [Serializable] structs
+                if (type.IsArray && IsSerializableStruct(type.GetElementType()))
+                {
+                    var array = value as Array;
+                    if (array == null)
+                    {
+                        dict[name] = null;
+                        return;
+                    }
+                    var serialized = new List<object>();
+                    foreach (var el in array)
+                        serialized.Add(el == null ? null : SerializeStructValue(el, type.GetElementType()));
+                    dict[name] = serialized;
+                    return;
+                }
+
+                // Handle List<T> of [Serializable] structs
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+                {
+                    Type elType = type.GetGenericArguments()[0];
+                    if (IsSerializableStruct(elType))
+                    {
+                        var list = value as System.Collections.IList;
+                        if (list == null)
+                        {
+                            dict[name] = null;
+                            return;
+                        }
+                        var serialized = new List<object>();
+                        foreach (var el in list)
+                            serialized.Add(el == null ? null : SerializeStructValue(el, elType));
+                        dict[name] = serialized;
+                        return;
+                    }
                 }
 
                 // Skip other complex types entirely to prevent recursion

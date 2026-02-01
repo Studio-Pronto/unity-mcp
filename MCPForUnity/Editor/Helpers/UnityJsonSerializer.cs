@@ -18,6 +18,7 @@ namespace MCPForUnity.Editor.Helpers
         {
             Converters = new List<JsonConverter>
             {
+                new SerializableStructArrayConverter(),  // Must be first for struct array priority
                 new Vector2Converter(),
                 new Vector3Converter(),
                 new Vector4Converter(),
@@ -25,6 +26,7 @@ namespace MCPForUnity.Editor.Helpers
                 new ColorConverter(),
                 new RectConverter(),
                 new BoundsConverter(),
+                new Matrix4x4Converter(),
                 new UnityEngineObjectConverter()
             }
         });

@@ -351,20 +351,22 @@ namespace MCPForUnity.Runtime.Serialization
                 // e.g., {"find": "Player", "method": "by_name"} or {"find": "Player", "component": "Health"}
                 if (jo.TryGetValue("find", out JToken findToken))
                 {
-                    // Call ManageGameObject.FindObjectByInstruction via reflection
-                    // (it's in Editor assembly, this file is in Runtime)
-                    var mgType = Type.GetType("MCPForUnity.Editor.Tools.ManageGameObject, MCPForUnity.Editor");
-                    if (mgType != null)
+                    // Use ObjectResolver (available in Editor assembly)
+                    var resolverType = Type.GetType("MCPForUnity.Editor.Helpers.ObjectResolver, MCPForUnity.Editor");
+                    if (resolverType != null)
                     {
-                        var method = mgType.GetMethod("FindObjectByInstruction",
-                            BindingFlags.Public | BindingFlags.Static);
+                        var method = resolverType.GetMethod("Resolve",
+                            BindingFlags.Public | BindingFlags.Static,
+                            null,
+                            new Type[] { typeof(JObject), typeof(Type) },
+                            null);
                         if (method != null)
                         {
                             var result = method.Invoke(null, new object[] { jo, objectType });
                             return result as UnityEngine.Object;
                         }
                     }
-                    Debug.LogWarning($"[UnityEngineObjectConverter] Could not resolve FindObjectByInstruction for find instruction: {jo}");
+                    Debug.LogWarning($"[UnityEngineObjectConverter] Could not resolve find instruction: {jo}");
                     return null;
                 }
 
