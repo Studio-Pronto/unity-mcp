@@ -1,5 +1,4 @@
 import json
-import math
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -9,50 +8,8 @@ from services.registry import mcp_for_unity_tool
 from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
-from services.tools.utils import coerce_bool, parse_json_payload, coerce_int
+from services.tools.utils import coerce_bool, parse_json_payload, coerce_int, normalize_vector3
 from services.tools.preflight import preflight
-
-
-def _normalize_vector(value: Any, default: Any = None) -> list[float] | None:
-    """
-    Robustly normalize a vector parameter to [x, y, z] format.
-    Handles: list, tuple, JSON string, comma-separated string.
-    Returns None if parsing fails.
-    """
-    if value is None:
-        return default
-
-    # If already a list/tuple with 3 elements, convert to floats
-    if isinstance(value, (list, tuple)) and len(value) == 3:
-        try:
-            vec = [float(value[0]), float(value[1]), float(value[2])]
-            return vec if all(math.isfinite(n) for n in vec) else default
-        except (ValueError, TypeError):
-            return default
-
-    # Try parsing as JSON string
-    if isinstance(value, str):
-        parsed = parse_json_payload(value)
-        if isinstance(parsed, list) and len(parsed) == 3:
-            try:
-                vec = [float(parsed[0]), float(parsed[1]), float(parsed[2])]
-                return vec if all(math.isfinite(n) for n in vec) else default
-            except (ValueError, TypeError):
-                pass
-
-        # Handle legacy comma-separated strings "1,2,3" or "[1,2,3]"
-        s = value.strip()
-        if s.startswith("[") and s.endswith("]"):
-            s = s[1:-1]
-        parts = [p.strip() for p in (s.split(",") if "," in s else s.split())]
-        if len(parts) == 3:
-            try:
-                vec = [float(parts[0]), float(parts[1]), float(parts[2])]
-                return vec if all(math.isfinite(n) for n in vec) else default
-            except (ValueError, TypeError):
-                pass
-
-    return default
 
 
 def _normalize_component_properties(value: Any) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
@@ -103,12 +60,12 @@ async def manage_gameobject(
                    "Tag name - used for both 'create' (initial tag) and 'modify' (change tag)"] | None = None,
     parent: Annotated[str,
                       "Parent GameObject reference - used for both 'create' (initial parent) and 'modify' (change parent)"] | None = None,
-    position: Annotated[list[float],
-                        "Position as [x, y, z] array"] | None = None,
-    rotation: Annotated[list[float],
-                        "Rotation as [x, y, z] euler angles array"] | None = None,
-    scale: Annotated[list[float],
-                     "Scale as [x, y, z] array"] | None = None,
+    position: Annotated[list[float] | dict[str, float] | str,
+                        "Position as [x, y, z] array, {x, y, z} object, or JSON string"] | None = None,
+    rotation: Annotated[list[float] | dict[str, float] | str,
+                        "Rotation as [x, y, z] euler angles array, {x, y, z} object, or JSON string"] | None = None,
+    scale: Annotated[list[float] | dict[str, float] | str,
+                     "Scale as [x, y, z] array, {x, y, z} object, or JSON string"] | None = None,
     components_to_add: Annotated[list[str],
                                  "List of component names to add"] | None = None,
     primitive_type: Annotated[str,
@@ -160,8 +117,8 @@ async def manage_gameobject(
     # --- Parameters for 'duplicate' ---
     new_name: Annotated[str,
                         "New name for the duplicated object (default: SourceName_Copy)"] | None = None,
-    offset: Annotated[list[float],
-                      "Offset from original/reference position as [x, y, z] array"] | None = None,
+    offset: Annotated[list[float] | str,
+                      "Offset from original/reference position as [x, y, z] array (list or JSON string)"] | None = None,
     # --- Parameters for 'move_relative' ---
     reference_object: Annotated[str,
                                 "Reference object for relative movement (required for move_relative)"] | None = None,
@@ -188,11 +145,19 @@ async def manage_gameobject(
             "message": "Missing required parameter 'action'. Valid actions: create, modify, delete, duplicate, move_relative. For finding GameObjects use find_gameobjects tool. For component operations use manage_components tool."
         }
 
-    # --- Normalize vector parameters using robust helper ---
-    position = _normalize_vector(position)
-    rotation = _normalize_vector(rotation)
-    scale = _normalize_vector(scale)
-    offset = _normalize_vector(offset)
+    # --- Normalize vector parameters with detailed error handling ---
+    position, position_error = normalize_vector3(position, "position")
+    if position_error:
+        return {"success": False, "message": position_error}
+    rotation, rotation_error = normalize_vector3(rotation, "rotation")
+    if rotation_error:
+        return {"success": False, "message": rotation_error}
+    scale, scale_error = normalize_vector3(scale, "scale")
+    if scale_error:
+        return {"success": False, "message": scale_error}
+    offset, offset_error = normalize_vector3(offset, "offset")
+    if offset_error:
+        return {"success": False, "message": offset_error}
 
     # --- Normalize boolean parameters ---
     save_as_prefab = coerce_bool(save_as_prefab)

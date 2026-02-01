@@ -168,6 +168,10 @@ unity-mcp editor menu "Edit/Project Settings..."
 # Custom tools
 unity-mcp editor custom-tool "MyBuildTool"
 unity-mcp editor custom-tool "Deploy" --params '{"target": "Android"}'
+
+# List custom tools for the active Unity project
+unity-mcp tool list
+unity-mcp custom_tool list
 ```
 
 ### Testing
@@ -198,6 +202,8 @@ unity-mcp material assign "Assets/Materials/Red.mat" "Cube"
 ```
 
 ### VFX Operations
+
+Note: VFX Graph tooling is tested against com.unity.visualeffectgraph 12.1.13. Install VFX Graph and use URP/HDRP (set the Render Pipeline Asset) to avoid Unity warnings; other versions may be unsupported.
 
 ```bash
 # Particle systems
@@ -344,6 +350,8 @@ unity-mcp raw read_console '{"count": 20}'
 | `animation` | `play`, `set-parameter` |
 | `audio` | `play`, `stop`, `volume` |
 | `lighting` | `create` |
+| `tool` | `list` |
+| `custom_tool` | `list` |
 | `ui` | `create-canvas`, `create-text`, `create-button`, `create-image` |
 
 ---

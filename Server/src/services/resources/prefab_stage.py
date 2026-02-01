@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from fastmcp import Context
 
 from models import MCPResponse
+from models.unity_response import parse_resource_response
 from services.registry import mcp_for_unity_resource
 from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
@@ -25,7 +26,7 @@ class PrefabStageResponse(MCPResponse):
 @mcp_for_unity_resource(
     uri="mcpforunity://editor/prefab-stage",
     name="editor_prefab_stage",
-    description="Current prefab editing context if a prefab is open in isolation mode. Returns isOpen=false if no prefab is being edited."
+    description="Current prefab editing context if a prefab is open in isolation mode. Returns isOpen=false if no prefab is being edited.\n\nURI: mcpforunity://editor/prefab-stage"
 )
 async def get_prefab_stage(ctx: Context) -> PrefabStageResponse | MCPResponse:
     """Get current prefab stage information."""
@@ -36,4 +37,4 @@ async def get_prefab_stage(ctx: Context) -> PrefabStageResponse | MCPResponse:
         "get_prefab_stage",
         {}
     )
-    return PrefabStageResponse(**response) if isinstance(response, dict) else response
+    return parse_resource_response(response, PrefabStageResponse)

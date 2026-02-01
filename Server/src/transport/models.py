@@ -23,6 +23,11 @@ class ExecuteCommandMessage(BaseModel):
     params: dict[str, Any]
     timeout: float
 
+
+class PingMessage(BaseModel):
+    """Server-initiated ping to detect dead connections."""
+    type: str = "ping"
+
 # Incoming (Plugin -> Server)
 
 
@@ -31,6 +36,7 @@ class RegisterMessage(BaseModel):
     project_name: str = "Unknown Project"
     project_hash: str
     unity_version: str = "Unknown"
+    project_path: str | None = None  # Full path to project root (for focus nudging)
 
 
 class RegisterToolsMessage(BaseModel):
