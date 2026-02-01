@@ -349,7 +349,8 @@ namespace MCPForUnity.Runtime.Serialization
 
                 // Handle find instruction for setting object references via component_properties
                 // e.g., {"find": "Player", "method": "by_name"} or {"find": "Player", "component": "Health"}
-                if (jo.TryGetValue("find", out JToken findToken))
+                // Also handles {"component_id": 12345} for direct component instance ID
+                if (jo.TryGetValue("find", out JToken findToken) || jo.TryGetValue("component_id", out _))
                 {
                     // Use ObjectResolver (available in Editor assembly)
                     var resolverType = Type.GetType("MCPForUnity.Editor.Helpers.ObjectResolver, MCPForUnity.Editor");
@@ -366,7 +367,7 @@ namespace MCPForUnity.Runtime.Serialization
                             return result as UnityEngine.Object;
                         }
                     }
-                    Debug.LogWarning($"[UnityEngineObjectConverter] Could not resolve find instruction: {jo}");
+                    Debug.LogWarning($"[UnityEngineObjectConverter] Could not resolve find/component_id instruction: {jo}");
                     return null;
                 }
 

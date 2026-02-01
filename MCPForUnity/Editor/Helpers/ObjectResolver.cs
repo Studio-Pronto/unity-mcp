@@ -26,7 +26,8 @@ namespace MCPForUnity.Editor.Helpers
         /// <summary>
         /// Resolves any Unity Object by instruction.
         /// </summary>
-        /// <param name="instruction">JObject with "find" (required), "method" (optional), "component" (optional)</param>
+        /// <param name="instruction">JObject with "find" (required), "method" (optional), "component" (optional).
+        /// Alternative: {"component_id": 12345} to directly resolve a component by instance ID.</param>
         /// <param name="targetType">The type of Unity Object to resolve</param>
         /// <returns>The resolved object, or null if not found</returns>
         public static UnityEngine.Object Resolve(JObject instruction, Type targetType)
@@ -34,13 +35,30 @@ namespace MCPForUnity.Editor.Helpers
             if (instruction == null)
                 return null;
 
+            // --- Direct Component ID Resolution ---
+            // {"component_id": 12345} - resolve component directly by instance ID
+            if (instruction.TryGetValue("component_id", out JToken compIdToken))
+            {
+                if (compIdToken.Type == JTokenType.Integer)
+                {
+                    int compId = compIdToken.ToObject<int>();
+                    UnityEngine.Object obj = EditorUtility.InstanceIDToObject(compId);
+                    if (obj != null && targetType.IsAssignableFrom(obj.GetType()))
+                    {
+                        return obj;
+                    }
+                    McpLog.Warn($"[ObjectResolver] component_id {compId} did not resolve to a valid {targetType.Name}.");
+                    return null;
+                }
+            }
+
             string findTerm = instruction["find"]?.ToString();
             string method = instruction["method"]?.ToString()?.ToLower();
             string componentName = instruction["component"]?.ToString();
 
             if (string.IsNullOrEmpty(findTerm))
             {
-                McpLog.Warn("[ObjectResolver] Find instruction missing 'find' term.");
+                McpLog.Warn("[ObjectResolver] Find instruction missing 'find' term (or use 'component_id' for direct component reference).");
                 return null;
             }
 
@@ -66,6 +84,23 @@ namespace MCPForUnity.Editor.Helpers
 
             if (foundGo == null)
             {
+                // If target is a Component and findTerm looks like an ID, try direct component lookup
+                // This handles the case where the user provides a component's instance ID directly
+                if (typeof(Component).IsAssignableFrom(targetType) && int.TryParse(findTerm, out int directCompId))
+                {
+                    UnityEngine.Object directObj = EditorUtility.InstanceIDToObject(directCompId);
+                    if (directObj != null && targetType.IsAssignableFrom(directObj.GetType()))
+                    {
+                        return directObj;
+                    }
+                    // If the ID resolved to a GameObject, get the component from it
+                    if (directObj is GameObject directGo)
+                    {
+                        Component comp = directGo.GetComponent(targetType);
+                        if (comp != null)
+                            return comp;
+                    }
+                }
                 return null;
             }
 
