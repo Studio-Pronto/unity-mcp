@@ -15,15 +15,19 @@ from services.tools.preflight import preflight
 REQUIRED_PARAMS = {
     "get_info": ["prefab_path"],
     "get_hierarchy": ["prefab_path"],
+    "open_stage": ["prefab_path"],
     "create_from_gameobject": ["target", "prefab_path"],
+    "save_open_stage": [],
+    "close_stage": [],
     "modify_contents": ["prefab_path"],
 }
 
 
 @mcp_for_unity_tool(
     description=(
-        "Manages Unity Prefab assets via headless operations (no UI, no prefab stages). "
-        "Actions: get_info, get_hierarchy, create_from_gameobject, modify_contents. "
+        "Manages Unity Prefab assets and stages. "
+        "Actions: get_info, get_hierarchy, open_stage, close_stage, save_open_stage, create_from_gameobject, modify_contents. "
+        "Use open_stage/close_stage/save_open_stage for interactive prefab editing in the prefab stage. "
         "Use modify_contents for headless prefab editing - ideal for automated workflows. "
         "Use create_child parameter with modify_contents to add child GameObjects to a prefab "
         "(single object or array for batch creation in one save). "
@@ -40,6 +44,9 @@ async def manage_prefabs(
     ctx: Context,
     action: Annotated[
         Literal[
+            "open_stage",
+            "close_stage",
+            "save_open_stage",
             "create_from_gameobject",
             "get_info",
             "get_hierarchy",
@@ -49,6 +56,10 @@ async def manage_prefabs(
     ],
     prefab_path: Annotated[str, "Prefab asset path (e.g., Assets/Prefabs/MyPrefab.prefab)."] | None = None,
     target: Annotated[str, "Target GameObject: scene object for create_from_gameobject, or object within prefab for modify_contents (name or path like 'Parent/Child')."] | None = None,
+    # Stage parameters
+    save_before_close: Annotated[bool, "Save before closing if unsaved changes exist (for close_stage)."] | None = None,
+    force: Annotated[bool, "Force save even if no changes detected (for save_open_stage). Useful for automated workflows."] | None = None,
+    # create_from_gameobject parameters
     allow_overwrite: Annotated[bool, "Allow replacing existing prefab."] | None = None,
     search_inactive: Annotated[bool, "Include inactive GameObjects in search."] | None = None,
     unlink_if_instance: Annotated[bool, "Unlink from existing prefab before creating new one."] | None = None,
@@ -105,6 +116,16 @@ async def manage_prefabs(
         if target:
             params["target"] = target
 
+        # Stage parameters
+        save_before_close_val = coerce_bool(save_before_close)
+        if save_before_close_val is not None:
+            params["saveBeforeClose"] = save_before_close_val
+
+        force_val = coerce_bool(force)
+        if force_val is not None:
+            params["force"] = force_val
+
+        # create_from_gameobject parameters
         allow_overwrite_val = coerce_bool(allow_overwrite)
         if allow_overwrite_val is not None:
             params["allowOverwrite"] = allow_overwrite_val

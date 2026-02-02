@@ -12,17 +12,20 @@ namespace MCPForUnity.Editor.Tools.Prefabs
 {
     [McpForUnityTool("manage_prefabs", AutoRegister = false)]
     /// <summary>
-    /// Tool to manage Unity Prefabs: create, inspect, and modify prefab assets.
-    /// Uses headless editing (no UI, no dialogs) for reliable automated workflows.
+    /// Tool to manage Unity Prefabs: create, inspect, modify, and stage-edit prefab assets.
+    /// Supports both headless editing (modify_contents) and interactive stage-based editing (open/close/save stage).
     /// </summary>
     public static class ManagePrefabs
     {
         // Action constants
+        private const string ACTION_OPEN_STAGE = "open_stage";
+        private const string ACTION_CLOSE_STAGE = "close_stage";
+        private const string ACTION_SAVE_OPEN_STAGE = "save_open_stage";
         private const string ACTION_CREATE_FROM_GAMEOBJECT = "create_from_gameobject";
         private const string ACTION_GET_INFO = "get_info";
         private const string ACTION_GET_HIERARCHY = "get_hierarchy";
         private const string ACTION_MODIFY_CONTENTS = "modify_contents";
-        private const string SupportedActions = ACTION_CREATE_FROM_GAMEOBJECT + ", " + ACTION_GET_INFO + ", " + ACTION_GET_HIERARCHY + ", " + ACTION_MODIFY_CONTENTS;
+        private const string SupportedActions = ACTION_OPEN_STAGE + ", " + ACTION_CLOSE_STAGE + ", " + ACTION_SAVE_OPEN_STAGE + ", " + ACTION_CREATE_FROM_GAMEOBJECT + ", " + ACTION_GET_INFO + ", " + ACTION_GET_HIERARCHY + ", " + ACTION_MODIFY_CONTENTS;
 
         public static object HandleCommand(JObject @params)
         {
@@ -41,6 +44,12 @@ namespace MCPForUnity.Editor.Tools.Prefabs
             {
                 switch (action)
                 {
+                    case ACTION_OPEN_STAGE:
+                        return OpenStage(@params);
+                    case ACTION_CLOSE_STAGE:
+                        return CloseStage(@params);
+                    case ACTION_SAVE_OPEN_STAGE:
+                        return SaveOpenStage(@params);
                     case ACTION_CREATE_FROM_GAMEOBJECT:
                         return CreatePrefabFromGameObject(@params);
                     case ACTION_GET_INFO:
@@ -59,6 +68,210 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                 return new ErrorResponse($"Internal error: {e.Message}");
             }
         }
+
+        #region Prefab Stage Operations
+
+        /// <summary>
+        /// Opens a prefab in prefab mode for editing.
+        /// </summary>
+        private static object OpenStage(JObject @params)
+        {
+            string prefabPath = @params["prefabPath"]?.ToString();
+            if (string.IsNullOrEmpty(prefabPath))
+            {
+                return new ErrorResponse("'prefabPath' parameter is required for open_stage.");
+            }
+
+            string sanitizedPath = AssetPathUtility.SanitizeAssetPath(prefabPath);
+            if (string.IsNullOrEmpty(sanitizedPath))
+            {
+                return new ErrorResponse($"Invalid prefab path: '{prefabPath}'.");
+            }
+            GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(sanitizedPath);
+            if (prefabAsset == null)
+            {
+                return new ErrorResponse($"No prefab asset found at path '{sanitizedPath}'.");
+            }
+
+            PrefabStage stage = PrefabStageUtility.OpenPrefab(sanitizedPath);
+            if (stage == null)
+            {
+                return new ErrorResponse($"Failed to open prefab stage for '{sanitizedPath}'.");
+            }
+
+            return new SuccessResponse($"Opened prefab stage for '{sanitizedPath}'.", SerializeStage(stage));
+        }
+
+        /// <summary>
+        /// Closes the currently open prefab stage, optionally saving first.
+        /// </summary>
+        private static object CloseStage(JObject @params)
+        {
+            PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (stage == null)
+            {
+                return new SuccessResponse("No prefab stage was open.");
+            }
+
+            string assetPath = stage.assetPath;
+            bool saveBeforeClose = @params["saveBeforeClose"]?.ToObject<bool>() ?? false;
+
+            if (saveBeforeClose && stage.scene.isDirty)
+            {
+                try
+                {
+                    SaveAndRefreshStage(stage);
+                }
+                catch (Exception e)
+                {
+                    return new ErrorResponse($"Failed to save prefab before closing: {e.Message}");
+                }
+            }
+
+            StageUtility.GoToMainStage();
+            return new SuccessResponse($"Closed prefab stage for '{assetPath}'.");
+        }
+
+        /// <summary>
+        /// Saves changes to the currently open prefab stage.
+        /// Supports a 'force' parameter for automated workflows where isDirty may not be set.
+        /// </summary>
+        private static object SaveOpenStage(JObject @params)
+        {
+            PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (stage == null)
+            {
+                return new ErrorResponse("No prefab stage is currently open.");
+            }
+
+            if (!ValidatePrefabStageForSave(stage))
+            {
+                return new ErrorResponse("Prefab stage validation failed. Cannot save.");
+            }
+
+            // Check for force parameter (useful for automated workflows)
+            bool force = @params?["force"]?.ToObject<bool>() ?? false;
+
+            // Check if there are actual changes to save
+            bool wasDirty = stage.scene.isDirty;
+            if (!wasDirty && !force)
+            {
+                return new SuccessResponse($"Prefab stage for '{stage.assetPath}' has no unsaved changes.", SerializeStage(stage));
+            }
+
+            try
+            {
+                SaveAndRefreshStage(stage, force);
+                return new SuccessResponse($"Saved prefab stage for '{stage.assetPath}'.", SerializeStage(stage));
+            }
+            catch (Exception e)
+            {
+                return new ErrorResponse($"Failed to save prefab: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Serializes prefab stage info for response.
+        /// </summary>
+        private static object SerializeStage(PrefabStage stage)
+        {
+            return new
+            {
+                assetPath = stage.assetPath,
+                prefabRootName = stage.prefabContentsRoot?.name,
+                mode = stage.mode.ToString(),
+                isDirty = stage.scene.isDirty
+            };
+        }
+
+        #endregion
+
+        #region Prefab Save Operations
+
+        /// <summary>
+        /// Saves the prefab stage and refreshes the asset database.
+        /// Uses PrefabUtility.SaveAsPrefabAsset for reliable prefab saving without dialogs.
+        /// </summary>
+        /// <param name="stage">The prefab stage to save.</param>
+        /// <param name="force">If true, marks the prefab dirty before saving to ensure changes are captured.</param>
+        private static void SaveAndRefreshStage(PrefabStage stage, bool force = false)
+        {
+            if (stage == null)
+            {
+                throw new ArgumentNullException(nameof(stage), "Prefab stage cannot be null.");
+            }
+
+            if (stage.prefabContentsRoot == null)
+            {
+                throw new InvalidOperationException("Cannot save prefab stage without a prefab root.");
+            }
+
+            if (string.IsNullOrEmpty(stage.assetPath))
+            {
+                throw new InvalidOperationException("Prefab stage has invalid asset path.");
+            }
+
+            // When force=true, mark the prefab root dirty to ensure changes are saved
+            // This is useful for automated workflows where isDirty may not be set correctly
+            if (force)
+            {
+                EditorUtility.SetDirty(stage.prefabContentsRoot);
+                EditorSceneManager.MarkSceneDirty(stage.scene);
+            }
+
+            // Mark all children as dirty to ensure their changes are captured
+            foreach (Transform child in stage.prefabContentsRoot.GetComponentsInChildren<Transform>(true))
+            {
+                if (child != stage.prefabContentsRoot.transform)
+                {
+                    EditorUtility.SetDirty(child.gameObject);
+                }
+            }
+
+            // Use PrefabUtility.SaveAsPrefabAsset which saves without dialogs
+            // This is more reliable for automated workflows than EditorSceneManager.SaveScene
+            bool success;
+            PrefabUtility.SaveAsPrefabAsset(stage.prefabContentsRoot, stage.assetPath, out success);
+
+            if (!success)
+            {
+                throw new InvalidOperationException($"Failed to save prefab asset for '{stage.assetPath}'.");
+            }
+
+            // Ensure changes are persisted to disk
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            McpLog.Info($"[ManagePrefabs] Successfully saved prefab '{stage.assetPath}'.");
+        }
+
+        /// <summary>
+        /// Validates prefab stage before saving.
+        /// </summary>
+        private static bool ValidatePrefabStageForSave(PrefabStage stage)
+        {
+            if (stage == null)
+            {
+                McpLog.Warn("[ManagePrefabs] No prefab stage is open.");
+                return false;
+            }
+
+            if (stage.prefabContentsRoot == null)
+            {
+                McpLog.Error($"[ManagePrefabs] Prefab stage '{stage.assetPath}' has no root object.");
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(stage.assetPath))
+            {
+                McpLog.Error("[ManagePrefabs] Prefab stage has invalid asset path.");
+                return false;
+            }
+
+            return true;
+        }
+
+        #endregion
 
         #region Create Prefab from GameObject
 
