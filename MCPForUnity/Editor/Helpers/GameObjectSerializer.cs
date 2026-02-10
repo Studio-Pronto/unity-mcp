@@ -13,9 +13,16 @@ namespace MCPForUnity.Editor.Helpers
     /// <summary>
     /// Handles serialization of GameObjects and Components for MCP responses.
     /// Includes reflection helpers and caching for performance.
-    /// </summary> 
+    /// </summary>
     public static class GameObjectSerializer
     {
+        /// <summary>
+        /// Maximum number of properties + fields to serialize per component.
+        /// Prevents unbounded serialization for components with very large property sets
+        /// (e.g., Ignis FlammableObject with 50+ nested structs) that can block Unity's
+        /// main thread long enough to cause WebSocket timeouts or crashes.
+        /// </summary>
+        private const int MaxSerializedProperties = 200;
         // --- Helper Methods for Enhanced Serialization ---
 
         /// <summary>
@@ -347,9 +354,15 @@ namespace MCPForUnity.Editor.Helpers
             // --- End Early Logging ---
 
             if (c == null) return null;
+
+            // Reset tracked visited-objects and depth counter to ensure clean state.
+            // Without this, stale state from a previous serialization (e.g., a timed-out request)
+            // can cause incorrect circular-reference detection or depth-limit hits on retry.
+            ResetSerializationState();
+
             Type componentType = c.GetType();
 
-            // --- Special handling for Transform to avoid reflection crashes and problematic properties --- 
+            // --- Special handling for Transform to avoid reflection crashes and problematic properties ---
             if (componentType == typeof(Transform))
             {
                 Transform tr = c as Transform;
@@ -590,14 +603,19 @@ namespace MCPForUnity.Editor.Helpers
 
             // --- Use cached metadata ---
             var serializablePropertiesOutput = new Dictionary<string, object>();
-
-            // --- Add Logging Before Property Loop ---
-            // McpLog.Info($"[GetComponentData] Starting property loop for {componentType.Name}...");
-            // --- End Logging Before Property Loop ---
+            int serializedCount = 0;
+            int totalMemberCount = cachedData.SerializableProperties.Count + cachedData.SerializableFields.Count;
+            bool truncated = false;
 
             // Use cached properties
             foreach (var propInfo in cachedData.SerializableProperties)
             {
+                if (serializedCount >= MaxSerializedProperties)
+                {
+                    truncated = true;
+                    break;
+                }
+
                 string propName = propInfo.Name;
 
                 // --- Skip known obsolete/problematic Component shortcut properties ---
@@ -610,7 +628,6 @@ namespace MCPForUnity.Editor.Helpers
                     // Also skip potentially problematic Matrix properties prone to cycles/errors
                     propName == "worldToLocalMatrix" || propName == "localToWorldMatrix")
                 {
-                    // McpLog.Info($"[GetComponentData] Explicitly skipping generic property: {propName}"); // Optional log
                     skipProperty = true;
                 }
                 // --- End Skip Generic Properties ---
@@ -627,7 +644,6 @@ namespace MCPForUnity.Editor.Helpers
                      propName == "previousViewProjectionMatrix" ||
                      propName == "cameraToWorldMatrix"))
                 {
-                    // McpLog.Info($"[GetComponentData] Explicitly skipping Camera property: {propName}");
                     skipProperty = true;
                 }
                 // --- End Skip Camera Properties ---
@@ -639,7 +655,6 @@ namespace MCPForUnity.Editor.Helpers
                      propName == "worldToLocalMatrix" ||
                      propName == "localToWorldMatrix"))
                 {
-                    // McpLog.Info($"[GetComponentData] Explicitly skipping Transform property: {propName}");
                     skipProperty = true;
                 }
                 // --- End Skip Transform Properties ---
@@ -652,10 +667,6 @@ namespace MCPForUnity.Editor.Helpers
 
                 try
                 {
-                    // --- Add detailed logging --- 
-                    // McpLog.Info($"[GetComponentData] Accessing: {componentType.Name}.{propName}");
-                    // --- End detailed logging ---
-
                     // --- Special handling for material/mesh properties in edit mode ---
                     object value;
                     if (!Application.isPlaying && (propName == "material" || propName == "materials" || propName == "mesh"))
@@ -686,33 +697,34 @@ namespace MCPForUnity.Editor.Helpers
 
                     Type propType = propInfo.PropertyType;
                     AddSerializableValue(serializablePropertiesOutput, propName, propType, value);
+                    serializedCount++;
                 }
                 catch (Exception)
                 {
-                    // McpLog.Warn($"Could not read property {propName} on {componentType.Name}");
+                    // Skip properties that fail to read (native crashes bypass this)
                 }
             }
-
-            // --- Add Logging Before Field Loop ---
-            // McpLog.Info($"[GetComponentData] Starting field loop for {componentType.Name}...");
-            // --- End Logging Before Field Loop ---
 
             // Use cached fields
             foreach (var fieldInfo in cachedData.SerializableFields)
             {
+                if (serializedCount >= MaxSerializedProperties)
+                {
+                    truncated = true;
+                    break;
+                }
+
                 try
                 {
-                    // --- Add detailed logging for fields --- 
-                    // McpLog.Info($"[GetComponentData] Accessing Field: {componentType.Name}.{fieldInfo.Name}");
-                    // --- End detailed logging for fields ---
                     object value = fieldInfo.GetValue(c);
                     string fieldName = fieldInfo.Name;
                     Type fieldType = fieldInfo.FieldType;
                     AddSerializableValue(serializablePropertiesOutput, fieldName, fieldType, value);
+                    serializedCount++;
                 }
                 catch (Exception)
                 {
-                    // McpLog.Warn($"Could not read field {fieldInfo.Name} on {componentType.Name}");
+                    // Skip fields that fail to read (native crashes bypass this)
                 }
             }
             // --- End Use cached metadata ---
@@ -720,6 +732,13 @@ namespace MCPForUnity.Editor.Helpers
             if (serializablePropertiesOutput.Count > 0)
             {
                 data["properties"] = serializablePropertiesOutput;
+            }
+
+            if (truncated)
+            {
+                data["_truncated"] = true;
+                data["_serializedCount"] = serializedCount;
+                data["_totalMemberCount"] = totalMemberCount;
             }
 
             // Add prefab property overrides if requested

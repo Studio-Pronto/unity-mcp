@@ -166,7 +166,20 @@ namespace MCPForUnity.Editor.Resources.Scene
                 {
                     if (includeProperties)
                     {
-                        componentData.Add(GameObjectSerializer.GetComponentData(component));
+                        try
+                        {
+                            componentData.Add(GameObjectSerializer.GetComponentData(component));
+                        }
+                        catch (Exception compEx)
+                        {
+                            McpLog.Warn($"[GameObjectComponentsResource] Failed to serialize component {component.GetType().FullName}: {compEx.Message}");
+                            componentData.Add(new
+                            {
+                                typeName = component.GetType().FullName,
+                                instanceID = component.GetInstanceID(),
+                                _error = $"Failed to serialize: {compEx.Message}"
+                            });
+                        }
                     }
                     else
                     {
@@ -263,6 +276,22 @@ namespace MCPForUnity.Editor.Resources.Scene
                     return new ErrorResponse($"Component '{componentName}' not found on GameObject '{go.name}'.");
                 }
 
+                object serializedComponent;
+                try
+                {
+                    serializedComponent = GameObjectSerializer.GetComponentData(targetComponent);
+                }
+                catch (Exception compEx)
+                {
+                    McpLog.Warn($"[GameObjectComponentResource] Failed to serialize component {targetComponent.GetType().FullName}: {compEx.Message}");
+                    serializedComponent = new
+                    {
+                        typeName = targetComponent.GetType().FullName,
+                        instanceID = targetComponent.GetInstanceID(),
+                        _error = $"Failed to serialize: {compEx.Message}"
+                    };
+                }
+
                 return new
                 {
                     success = true,
@@ -270,7 +299,7 @@ namespace MCPForUnity.Editor.Resources.Scene
                     {
                         gameObjectID = instanceID,
                         gameObjectName = go.name,
-                        component = GameObjectSerializer.GetComponentData(targetComponent)
+                        component = serializedComponent
                     }
                 };
             }
