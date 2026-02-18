@@ -29,8 +29,9 @@ namespace MCPForUnity.Editor.Constants
         internal const string WebSocketUrlOverride = "MCPForUnity.WebSocketUrl";
         internal const string GitUrlOverride = "MCPForUnity.GitUrlOverride";
         internal const string DevModeForceServerRefresh = "MCPForUnity.DevModeForceServerRefresh";
-        internal const string UseBetaServer = "MCPForUnity.UseBetaServer";
         internal const string ProjectScopedToolsLocalHttp = "MCPForUnity.ProjectScopedTools.LocalHttp";
+        internal const string AllowLanHttpBind = "MCPForUnity.Security.AllowLanHttpBind";
+        internal const string AllowInsecureRemoteHttp = "MCPForUnity.Security.AllowInsecureRemoteHttp";
 
         internal const string PackageDeploySourcePath = "MCPForUnity.PackageDeploy.SourcePath";
         internal const string PackageDeployLastBackupPath = "MCPForUnity.PackageDeploy.LastBackupPath";
@@ -46,6 +47,7 @@ namespace MCPForUnity.Editor.Constants
         internal const string ResourceEnabledPrefix = "MCPForUnity.ResourceEnabled.";
         internal const string ResourceFoldoutStatePrefix = "MCPForUnity.ResourceFoldout.";
         internal const string EditorWindowActivePanel = "MCPForUnity.EditorWindow.ActivePanel";
+        internal const string LastSelectedClientId = "MCPForUnity.LastSelectedClientId";
 
         internal const string SetupCompleted = "MCPForUnity.SetupCompleted";
         internal const string SetupDismissed = "MCPForUnity.SetupDismissed";
@@ -62,5 +64,7 @@ namespace MCPForUnity.Editor.Constants
         internal const string CustomerUuid = "MCPForUnity.CustomerUUID";
 
         internal const string ApiKey = "MCPForUnity.ApiKey";
+
+        internal const string BatchExecuteMaxCommands = "MCPForUnity.BatchExecute.MaxCommands";
     }
 }

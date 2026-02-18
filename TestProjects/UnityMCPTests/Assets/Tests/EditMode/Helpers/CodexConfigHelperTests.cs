@@ -58,6 +58,8 @@ namespace MCPForUnityTests.Editor.Helpers
             // Ensure deterministic uvx args ordering for these tests regardless of editor settings
             // (dev-mode inserts --no-cache/--refresh, which changes the first args).
             EditorPrefs.SetBool(EditorPrefKeys.DevModeForceServerRefresh, false);
+            // Refresh the cache so it picks up the test's pref values
+            EditorConfigurationCache.Instance.Refresh();
         }
 
         [TearDown]
@@ -108,6 +110,7 @@ namespace MCPForUnityTests.Editor.Helpers
             {
                 EditorPrefs.DeleteKey(EditorPrefKeys.DevModeForceServerRefresh);
             }
+
         }
 
         [Test]

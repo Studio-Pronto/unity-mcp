@@ -201,6 +201,8 @@ namespace MCPForUnity.Editor.Helpers
         /// Gets the package source for the MCP server (used with uvx --from).
         /// Checks for EditorPrefs override first (supports git URLs, file:// paths, etc.),
         /// then falls back to PyPI package reference.
+        /// When the override is a local path, auto-corrects to the "Server" subdirectory
+        /// if the path doesn't contain pyproject.toml but Server/pyproject.toml exists.
         /// </summary>
         /// <returns>Package source string for uvx --from argument</returns>
         public static string GetMcpServerPackageSource()
@@ -209,11 +211,71 @@ namespace MCPForUnity.Editor.Helpers
             string sourceOverride = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, "");
             if (!string.IsNullOrEmpty(sourceOverride))
             {
-                return sourceOverride;
+                string resolved = ResolveLocalServerPath(sourceOverride);
+                // Persist the corrected path so future reads are consistent
+                if (resolved != sourceOverride)
+                {
+                    EditorPrefs.SetString(EditorPrefKeys.GitUrlOverride, resolved);
+                    McpLog.Info($"Auto-corrected server source override from '{sourceOverride}' to '{resolved}'");
+                }
+                return resolved;
             }
 
             // Fork always uses #main since enhancements are ahead of upstream version tags
             return "git+https://github.com/vbucc/unity-mcp#subdirectory=Server";
+        }
+
+        /// <summary>
+        /// Validates and auto-corrects a local server source path to ensure it points to the
+        /// directory containing pyproject.toml. If the path points to a parent directory
+        /// (e.g. the repo root "unity-mcp") instead of the Python package directory ("Server"),
+        /// this checks for a "Server" subdirectory with pyproject.toml and returns that path.
+        /// Non-local paths (URLs, PyPI references) are returned unchanged.
+        /// </summary>
+        internal static string ResolveLocalServerPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            // Skip non-local paths (git URLs, PyPI package names, etc.)
+            if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("git+", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            // If it looks like a PyPI package reference (no path separators), skip
+            if (!path.Contains('/') && !path.Contains('\\') && !path.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            // Strip file:// prefix for filesystem checks, preserve for return value
+            string checkPath = path;
+            string prefix = string.Empty;
+            if (checkPath.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                prefix = checkPath.Substring(0, 7); // preserve original casing
+                checkPath = checkPath.Substring(7);
+            }
+
+            // Already correct — pyproject.toml exists at this path
+            if (System.IO.File.Exists(System.IO.Path.Combine(checkPath, "pyproject.toml")))
+            {
+                return path;
+            }
+
+            // Check if "Server" subdirectory contains pyproject.toml
+            string serverSubDir = System.IO.Path.Combine(checkPath, "Server");
+            if (System.IO.File.Exists(System.IO.Path.Combine(serverSubDir, "pyproject.toml")))
+            {
+                return prefix + serverSubDir;
+            }
+
+            // Return as-is; uvx will report the error if the path is truly invalid
+            return path;
         }
 
         /// <summary>
@@ -238,25 +300,41 @@ namespace MCPForUnity.Editor.Helpers
 
         /// <summary>
         /// Builds the uvx package source arguments for the MCP server.
-        /// Handles beta server mode (prerelease from PyPI) vs standard mode (pinned version or override).
+        /// Handles prerelease package mode (prerelease from PyPI) vs stable mode (pinned version or override).
         /// Centralizes the prerelease logic to avoid duplication between HTTP and stdio transports.
-        /// Priority: explicit fromUrl override > beta server mode > default package.
+        /// Priority: explicit fromUrl override > package-version-driven prerelease mode > stable pinned package.
+        /// NOTE: This overload reads from EditorPrefs/cache and MUST be called from the main thread.
+        /// For background threads, use the overload that accepts pre-captured parameters.
         /// </summary>
         /// <param name="quoteFromPath">Whether to quote the --from path (needed for command-line strings, not for arg lists)</param>
         /// <returns>The package source arguments (e.g., "--prerelease explicit --from mcpforunityserver>=0.0.0a0")</returns>
         public static string GetBetaServerFromArgs(bool quoteFromPath = false)
         {
+            string gitUrlOverride = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, "");
+            string packageSource = GetMcpServerPackageSource();
+            return GetBetaServerFromArgs(gitUrlOverride, packageSource, quoteFromPath);
+        }
+
+        /// <summary>
+        /// Thread-safe overload that accepts pre-captured values.
+        /// Use this when calling from background threads.
+        /// </summary>
+        /// <param name="gitUrlOverride">Pre-captured value from EditorPrefs GitUrlOverride</param>
+        /// <param name="packageSource">Pre-captured value from GetMcpServerPackageSource()</param>
+        /// <param name="quoteFromPath">Whether to quote the --from path</param>
+        public static string GetBetaServerFromArgs(string gitUrlOverride, string packageSource, bool quoteFromPath = false)
+        {
             // Explicit override (local path, git URL, etc.) always wins
-            string fromUrl = GetMcpServerPackageSource();
-            string overrideUrl = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, "");
-            if (!string.IsNullOrEmpty(overrideUrl))
+            if (!string.IsNullOrEmpty(gitUrlOverride))
             {
-                return $"--from {fromUrl}";
+                string fromValue = quoteFromPath ? $"\"{gitUrlOverride}\"" : gitUrlOverride;
+                return $"--from {fromValue}";
             }
 
-            // Beta server mode: use prerelease from PyPI
-            bool useBetaServer = EditorPrefs.GetBool(EditorPrefKeys.UseBetaServer, true);
-            if (useBetaServer)
+            bool usePrereleaseRange = string.Equals(packageSource, "mcpforunityserver>=0.0.0a0", StringComparison.OrdinalIgnoreCase);
+
+            // Prerelease package mode: use prerelease from PyPI.
+            if (usePrereleaseRange)
             {
                 // Use --prerelease explicit with version specifier to only get prereleases of our package,
                 // not of dependencies (which can be broken on PyPI).
@@ -265,9 +343,10 @@ namespace MCPForUnity.Editor.Helpers
             }
 
             // Standard mode: use pinned version from package.json
-            if (!string.IsNullOrEmpty(fromUrl))
+            if (!string.IsNullOrEmpty(packageSource))
             {
-                return $"--from {fromUrl}";
+                string fromValue = quoteFromPath ? $"\"{packageSource}\"" : packageSource;
+                return $"--from {fromValue}";
             }
 
             return string.Empty;
@@ -275,26 +354,40 @@ namespace MCPForUnity.Editor.Helpers
 
         /// <summary>
         /// Builds the uvx package source arguments as a list (for JSON config builders).
-        /// Priority: explicit fromUrl override > beta server mode > default package.
+        /// Priority: explicit fromUrl override > package-version-driven prerelease mode > stable pinned package.
+        /// NOTE: This overload reads from EditorPrefs/cache and MUST be called from the main thread.
+        /// For background threads, use the overload that accepts pre-captured parameters.
         /// </summary>
         /// <returns>List of arguments to add to uvx command</returns>
         public static System.Collections.Generic.IList<string> GetBetaServerFromArgsList()
         {
+            string gitUrlOverride = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, "");
+            string packageSource = GetMcpServerPackageSource();
+            return GetBetaServerFromArgsList(gitUrlOverride, packageSource);
+        }
+
+        /// <summary>
+        /// Thread-safe overload that accepts pre-captured values.
+        /// Use this when calling from background threads.
+        /// </summary>
+        /// <param name="gitUrlOverride">Pre-captured value from EditorPrefs GitUrlOverride</param>
+        /// <param name="packageSource">Pre-captured value from GetMcpServerPackageSource()</param>
+        public static System.Collections.Generic.IList<string> GetBetaServerFromArgsList(string gitUrlOverride, string packageSource)
+        {
             var args = new System.Collections.Generic.List<string>();
 
             // Explicit override (local path, git URL, etc.) always wins
-            string fromUrl = GetMcpServerPackageSource();
-            string overrideUrl = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, "");
-            if (!string.IsNullOrEmpty(overrideUrl))
+            if (!string.IsNullOrEmpty(gitUrlOverride))
             {
                 args.Add("--from");
-                args.Add(fromUrl);
+                args.Add(gitUrlOverride);
                 return args;
             }
 
-            // Beta server mode: use prerelease from PyPI
-            bool useBetaServer = EditorPrefs.GetBool(EditorPrefKeys.UseBetaServer, true);
-            if (useBetaServer)
+            bool usePrereleaseRange = string.Equals(packageSource, "mcpforunityserver>=0.0.0a0", StringComparison.OrdinalIgnoreCase);
+
+            // Prerelease package mode: use prerelease from PyPI.
+            if (usePrereleaseRange)
             {
                 args.Add("--prerelease");
                 args.Add("explicit");
@@ -304,10 +397,10 @@ namespace MCPForUnity.Editor.Helpers
             }
 
             // Standard mode: use pinned version from package.json
-            if (!string.IsNullOrEmpty(fromUrl))
+            if (!string.IsNullOrEmpty(packageSource))
             {
                 args.Add("--from");
-                args.Add(fromUrl);
+                args.Add(packageSource);
             }
 
             return args;
@@ -341,8 +434,18 @@ namespace MCPForUnity.Editor.Helpers
                 return false;
 
             // Check for file:// protocol or absolute local path
-            return fromUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
-                   System.IO.Path.IsPathRooted(fromUrl);
+            if (fromUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            try
+            {
+                return System.IO.Path.IsPathRooted(fromUrl);
+            }
+            catch (System.ArgumentException)
+            {
+                // fromUrl contains characters illegal in paths (e.g. a remote URL)
+                return false;
+            }
         }
 
         /// <summary>
@@ -418,6 +521,40 @@ namespace MCPForUnity.Editor.Helpers
                 McpLog.Warn($"Failed to get package version: {ex.Message}");
                 return "unknown";
             }
+        }
+
+        /// <summary>
+        /// Returns true if the installed package version is a prerelease (beta, alpha, rc, etc.).
+        /// Used to auto-enable beta server mode for beta package users.
+        /// </summary>
+        public static bool IsPreReleaseVersion()
+        {
+            try
+            {
+                string version = GetPackageVersion();
+                if (string.IsNullOrEmpty(version) || version == "unknown")
+                    return false;
+
+                return IsSemVerPreRelease(version);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSemVerPreRelease(string version)
+        {
+            if (string.IsNullOrEmpty(version))
+                return false;
+
+            // Common semver prerelease indicators:
+            // e.g., "9.3.0-beta.1", "9.3.0-alpha", "9.3.0-rc.2", "9.3.0-preview"
+            return version.Contains("-beta", StringComparison.OrdinalIgnoreCase) ||
+                   version.Contains("-alpha", StringComparison.OrdinalIgnoreCase) ||
+                   version.Contains("-rc", StringComparison.OrdinalIgnoreCase) ||
+                   version.Contains("-preview", StringComparison.OrdinalIgnoreCase) ||
+                   version.Contains("-pre", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

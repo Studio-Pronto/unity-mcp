@@ -50,6 +50,7 @@ namespace MCPForUnity.Editor.Windows
         private bool resourcesLoaded = false;
         private double lastRefreshTime = 0;
         private const double RefreshDebounceSeconds = 0.5;
+        private bool updateCheckQueued = false;
 
         private enum ActivePanel
         {
@@ -196,7 +197,7 @@ namespace MCPForUnity.Editor.Windows
             }
 
             // Initialize version label
-            UpdateVersionLabel(EditorPrefs.GetBool(EditorPrefKeys.UseBetaServer, true));
+            UpdateVersionLabel();
 
             SetupTabs();
 
@@ -229,6 +230,11 @@ namespace MCPForUnity.Editor.Windows
                 // update the connection section's warning banner if there's a mismatch
                 clientConfigSection.OnClientTransportDetected += (clientName, transport) =>
                     connectionSection?.UpdateTransportMismatchWarning(clientName, transport);
+
+                // Wire up version mismatch detection: when client status is checked,
+                // update the connection section's warning banner if there's a version mismatch
+                clientConfigSection.OnClientConfigMismatch += (clientName, mismatchMessage) =>
+                    connectionSection?.UpdateVersionMismatchWarning(clientName, mismatchMessage);
             }
 
             // Load and initialize Validation section
@@ -256,14 +262,15 @@ namespace MCPForUnity.Editor.Windows
                 advancedSection.OnGitUrlChanged += () =>
                     clientConfigSection?.UpdateManualConfiguration();
                 advancedSection.OnHttpServerCommandUpdateRequested += () =>
+                {
                     connectionSection?.UpdateHttpServerCommandDisplay();
+                    connectionSection?.UpdateConnectionStatus();
+                };
                 advancedSection.OnTestConnectionRequested += async () =>
                 {
                     if (connectionSection != null)
                         await connectionSection.VerifyBridgeConnectionAsync();
                 };
-                advancedSection.OnBetaModeChanged += UpdateVersionLabel;
-
                 // Wire up health status updates from Connection to Advanced
                 connectionSection?.SetHealthStatusUpdateCallback((isHealthy, statusText) =>
                     advancedSection?.UpdateHealthStatus(isHealthy, statusText));
@@ -319,7 +326,7 @@ namespace MCPForUnity.Editor.Windows
             RefreshAllData();
         }
 
-        private void UpdateVersionLabel(bool useBetaServer)
+        private void UpdateVersionLabel()
         {
             if (versionLabel == null)
             {
@@ -327,10 +334,57 @@ namespace MCPForUnity.Editor.Windows
             }
 
             string version = AssetPathUtility.GetPackageVersion();
-            versionLabel.text = useBetaServer ? $"v{version} β" : $"v{version}";
-            versionLabel.tooltip = useBetaServer
-                ? "Beta server mode - fetching pre-release server versions from PyPI"
+            versionLabel.text = $"v{version}";
+            versionLabel.tooltip = AssetPathUtility.IsPreReleaseVersion()
+                ? $"MCP For Unity v{version} (pre-release package, using prerelease server channel)"
                 : $"MCP For Unity v{version}";
+        }
+
+        private void QueueUpdateCheck()
+        {
+            if (updateCheckQueued)
+            {
+                return;
+            }
+
+            updateCheckQueued = true;
+            EditorApplication.delayCall += CheckForPackageUpdates;
+        }
+
+        private void CheckForPackageUpdates()
+        {
+            updateCheckQueued = false;
+
+            if (updateNotification == null || updateNotificationText == null)
+            {
+                return;
+            }
+
+            string currentVersion = AssetPathUtility.GetPackageVersion();
+            if (string.IsNullOrEmpty(currentVersion) || currentVersion == "unknown")
+            {
+                updateNotification.RemoveFromClassList("visible");
+                return;
+            }
+
+            try
+            {
+                var result = MCPServiceLocator.Updates.CheckForUpdate(currentVersion);
+                if (result.CheckSucceeded && result.UpdateAvailable && !string.IsNullOrEmpty(result.LatestVersion))
+                {
+                    updateNotificationText.text = $"Newer version available: v{result.LatestVersion} (current v{currentVersion})";
+                    updateNotification.AddToClassList("visible");
+                }
+                else
+                {
+                    updateNotification.RemoveFromClassList("visible");
+                }
+            }
+            catch (Exception ex)
+            {
+                McpLog.Info($"Package update check skipped: {ex.Message}");
+                updateNotification.RemoveFromClassList("visible");
+            }
         }
 
         private void EnsureToolsLoaded()
@@ -454,6 +508,7 @@ namespace MCPForUnity.Editor.Windows
 
             advancedSection?.UpdatePathOverrides();
             clientConfigSection?.RefreshSelectedClient();
+            QueueUpdateCheck();
         }
 
         private void SetupTabs()
@@ -552,6 +607,8 @@ namespace MCPForUnity.Editor.Windows
             {
                 case ActivePanel.Clients:
                     if (clientsPanel != null) clientsPanel.style.display = DisplayStyle.Flex;
+                    // Refresh client status when switching to Connect tab (e.g., after package/version changes).
+                    clientConfigSection?.RefreshSelectedClient(forceImmediate: true);
                     break;
                 case ActivePanel.Validation:
                     if (validationPanel != null) validationPanel.style.display = DisplayStyle.Flex;

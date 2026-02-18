@@ -48,7 +48,6 @@ namespace MCPForUnity.Editor.Services
         // Cached values - most frequently read
         private bool _useHttpTransport;
         private bool _debugLogs;
-        private bool _useBetaServer;
         private bool _devModeForceServerRefresh;
         private string _uvxPathOverride;
         private string _gitUrlOverride;
@@ -69,12 +68,6 @@ namespace MCPForUnity.Editor.Services
         /// Default: false
         /// </summary>
         public bool DebugLogs => _debugLogs;
-
-        /// <summary>
-        /// Whether to use the beta server channel.
-        /// Default: true
-        /// </summary>
-        public bool UseBetaServer => _useBetaServer;
 
         /// <summary>
         /// Whether to force server refresh in dev mode (--no-cache --refresh).
@@ -137,7 +130,6 @@ namespace MCPForUnity.Editor.Services
         {
             _useHttpTransport = EditorPrefs.GetBool(EditorPrefKeys.UseHttpTransport, true);
             _debugLogs = EditorPrefs.GetBool(EditorPrefKeys.DebugLogs, false);
-            _useBetaServer = EditorPrefs.GetBool(EditorPrefKeys.UseBetaServer, true);
             _devModeForceServerRefresh = EditorPrefs.GetBool(EditorPrefKeys.DevModeForceServerRefresh, false);
             _uvxPathOverride = EditorPrefs.GetString(EditorPrefKeys.UvxPathOverride, string.Empty);
             _gitUrlOverride = EditorPrefs.GetString(EditorPrefKeys.GitUrlOverride, string.Empty);
@@ -171,19 +163,6 @@ namespace MCPForUnity.Editor.Services
                 _debugLogs = value;
                 EditorPrefs.SetBool(EditorPrefKeys.DebugLogs, value);
                 OnConfigurationChanged?.Invoke(nameof(DebugLogs));
-            }
-        }
-
-        /// <summary>
-        /// Set UseBetaServer and update cache + EditorPrefs atomically.
-        /// </summary>
-        public void SetUseBetaServer(bool value)
-        {
-            if (_useBetaServer != value)
-            {
-                _useBetaServer = value;
-                EditorPrefs.SetBool(EditorPrefKeys.UseBetaServer, value);
-                OnConfigurationChanged?.Invoke(nameof(UseBetaServer));
             }
         }
 
@@ -310,9 +289,6 @@ namespace MCPForUnity.Editor.Services
                     break;
                 case nameof(DebugLogs):
                     _debugLogs = EditorPrefs.GetBool(EditorPrefKeys.DebugLogs, false);
-                    break;
-                case nameof(UseBetaServer):
-                    _useBetaServer = EditorPrefs.GetBool(EditorPrefKeys.UseBetaServer, true);
                     break;
                 case nameof(DevModeForceServerRefresh):
                     _devModeForceServerRefresh = EditorPrefs.GetBool(EditorPrefKeys.DevModeForceServerRefresh, false);
