@@ -105,6 +105,7 @@ namespace MCPForUnity.Editor.Tools
 
             EditorUtility.SetDirty(targetGo);
             MarkOwningSceneDirty(targetGo);
+            SaveIfPersistent(targetGo);
 
             return new
             {
@@ -149,6 +150,7 @@ namespace MCPForUnity.Editor.Tools
 
             EditorUtility.SetDirty(targetGo);
             MarkOwningSceneDirty(targetGo);
+            SaveIfPersistent(targetGo);
 
             return new
             {
@@ -231,6 +233,7 @@ namespace MCPForUnity.Editor.Tools
 
                 EditorUtility.SetDirty(component);
                 MarkOwningSceneDirty(targetGo);
+                SaveIfPersistent(targetGo);
 
                 if (errors.Count > 0)
                 {
@@ -265,6 +268,18 @@ namespace MCPForUnity.Editor.Tools
         #endregion
 
         #region Helpers
+
+        /// <summary>
+        /// Persists changes to disk when the target is a persistent asset (e.g. a prefab on disk).
+        /// Scene objects are saved via scene save; persistent assets need AssetDatabase.SaveAssets().
+        /// </summary>
+        private static void SaveIfPersistent(GameObject targetGo)
+        {
+            if (EditorUtility.IsPersistent(targetGo))
+            {
+                AssetDatabase.SaveAssets();
+            }
+        }
 
         /// <summary>
         /// Marks the appropriate scene as dirty for the given GameObject.
