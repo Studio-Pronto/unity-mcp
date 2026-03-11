@@ -70,7 +70,7 @@ async def manage_components(
     - Set object reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"player": {"find": "Player", "method": "by_name"}}
     - Set component reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"targetHealth": {"find": "Player", "component": "Health"}}
     """
-    unity_instance = get_unity_instance_from_context(ctx)
+    unity_instance = await get_unity_instance_from_context(ctx)
 
     gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
     if gate is not None:

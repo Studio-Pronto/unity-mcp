@@ -69,8 +69,16 @@ unity-mcp scene hierarchy [--limit 20] [--depth 3]
 unity-mcp scene active
 unity-mcp scene load "Assets/Scenes/Main.unity"
 unity-mcp scene save
-unity-mcp scene screenshot --name "capture"
 unity-mcp --format json scene hierarchy
+```
+
+**Screenshots** (via `camera` command):
+```bash
+unity-mcp camera screenshot --file-name "capture"
+unity-mcp camera screenshot --camera-ref "MainCam" --include-image --max-resolution 512
+unity-mcp camera screenshot --batch surround --max-resolution 256
+unity-mcp camera screenshot --batch orbit --look-at "Player"
+unity-mcp camera screenshot-multiview --look-at "Player" --max-resolution 480
 ```
 
 **GameObject Operations**

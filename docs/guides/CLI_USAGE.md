@@ -68,8 +68,13 @@ unity-mcp scene active
 unity-mcp scene load "Assets/Scenes/Main.unity"
 unity-mcp scene save
 
-# Take screenshot
-unity-mcp scene screenshot --name "capture"
+# Screenshots (use camera command)
+unity-mcp camera screenshot
+unity-mcp camera screenshot --file-name "level_preview"
+unity-mcp camera screenshot --camera-ref "SecondCamera" --include-image
+unity-mcp camera screenshot --batch surround --max-resolution 256
+unity-mcp camera screenshot --batch orbit --look-at "Player"
+unity-mcp camera screenshot-multiview --look-at "Player" --max-resolution 480
 ```
 
 ### GameObject Operations
@@ -174,6 +179,25 @@ unity-mcp tool list
 unity-mcp custom_tool list
 ```
 
+#### Screenshot Parameters
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--filename, -f` | string | Output filename (default: timestamp-based) |
+| `--supersize, -s` | int | Resolution multiplier 1–4 for file-saved screenshots |
+| `--camera, -c` | string | Camera name/path/ID (default: Camera.main) |
+| `--include-image` | flag | Return base64 PNG inline in the response |
+| `--max-resolution, -r` | int | Max longest-edge pixels (default 640) |
+| `--batch, -b` | string | `surround` (6 angles) or `orbit` (configurable grid) |
+| `--look-at` | string | Target: GameObject name/path/ID, or `x,y,z` world position |
+| `--view-position` | string | Camera position as `x,y,z` (positioned screenshot) |
+| `--view-rotation` | string | Camera euler rotation as `x,y,z` (positioned screenshot) |
+| `--orbit-angles` | int | Number of azimuth steps around target (default 8) |
+| `--orbit-elevations` | string | Vertical angles as JSON array, e.g. `[0,30,-15]` (default `[0, 30, -15]`) |
+| `--orbit-distance` | float | Camera distance from target in world units (auto-fit if omitted) |
+| `--orbit-fov` | float | Camera FOV in degrees (default 60) |
+| `--output-dir, -o` | string | Save directory (default: Unity project's `Assets/Screenshots/`) |
+
 ### Testing
 
 ```bash
@@ -222,6 +246,28 @@ unity-mcp vfx trail set-time "Trail" 2.0
 
 # Raw VFX actions (access all 60+ actions)
 unity-mcp vfx raw particle_set_main "Fire" --params '{"duration": 5}'
+```
+
+### ProBuilder Operations
+
+Note: Requires com.unity.probuilder package installed in your Unity project.
+
+```bash
+# Create shapes
+unity-mcp probuilder create-shape Cube
+unity-mcp probuilder create-shape Torus --name "MyTorus" --params '{"rows": 16, "columns": 16}'
+unity-mcp probuilder create-shape Stair --position 0 0 5 --params '{"steps": 10}'
+
+# Create from polygon footprint
+unity-mcp probuilder create-poly --points "[[0,0,0],[5,0,0],[5,0,5],[0,0,5]]" --height 3
+
+# Get mesh info
+unity-mcp probuilder info "MyCube"
+
+# Raw ProBuilder actions
+unity-mcp probuilder raw extrude_faces "MyCube" --params '{"faceIndices": [0], "distance": 1.0}'
+unity-mcp probuilder raw bevel_edges "MyCube" --params '{"edgeIndices": [0,1], "amount": 0.2}'
+unity-mcp probuilder raw set_face_material "MyCube" --params '{"faceIndices": [0], "materialPath": "Assets/Materials/Red.mat"}'
 ```
 
 ### Batch Operations
@@ -332,11 +378,11 @@ unity-mcp raw read_console '{"count": 20}'
 | Group | Subcommands |
 |-------|-------------|
 | `instance` | `list`, `set`, `current` |
-| `scene` | `hierarchy`, `active`, `load`, `save`, `create`, `screenshot`, `build-settings` |
+| `scene` | `hierarchy`, `active`, `load`, `save`, `create`, `build-settings` |
+| `code` | `read`, `search` |
 | `gameobject` | `find`, `create`, `modify`, `delete`, `duplicate`, `move` |
 | `component` | `add`, `remove`, `set`, `modify` |
 | `script` | `create`, `read`, `delete`, `edit`, `validate` |
-| `code` | `read`, `search` |
 | `shader` | `create`, `read`, `update`, `delete` |
 | `editor` | `play`, `pause`, `stop`, `refresh`, `console`, `menu`, `tool`, `add-tag`, `remove-tag`, `add-layer`, `remove-layer`, `tests`, `poll-test`, `custom-tool` |
 | `asset` | `search`, `info`, `create`, `delete`, `duplicate`, `move`, `rename`, `import`, `mkdir` |
@@ -346,6 +392,7 @@ unity-mcp raw read_console '{"count": 20}'
 | `vfx line` | `info`, `set-positions`, `create-line`, `create-circle`, `clear` |
 | `vfx trail` | `info`, `set-time`, `clear` |
 | `vfx` | `raw` (access all 60+ actions) |
+| `probuilder` | `create-shape`, `create-poly`, `info`, `raw` (access all 21 actions) |
 | `batch` | `run`, `inline`, `template` |
 | `animation` | `play`, `set-parameter` |
 | `audio` | `play`, `stop`, `volume` |
