@@ -890,6 +890,11 @@ Examples:
 
     # Determine transport mode
     if config.transport_mode == 'http':
+        # Work around Claude Code not re-initializing after server restart.
+        # See: https://github.com/anthropics/claude-code/issues/27142
+        from transport.session_recovery import install as install_session_recovery
+        install_session_recovery()
+
         # Use HTTP transport for FastMCP
         transport = 'http'
         # Use the parsed host and port from URL/args

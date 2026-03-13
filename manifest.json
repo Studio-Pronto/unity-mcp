@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "Unity MCP",
-  "version": "9.5.3-fork.1",
+  "version": "9.5.3-fork.2",
   "description": "AI-powered Unity Editor automation via MCP - manage GameObjects, scripts, materials, scenes, prefabs, VFX, and run tests",
   "author": {
     "name": "Coplay",
@@ -44,10 +44,6 @@
     {
       "name": "debug_request_context",
       "description": "Debug and inspect MCP request context"
-    },
-    {
-      "name": "delete_script",
-      "description": "Delete C# scripts"
     },
     {
       "name": "execute_custom_tool",
