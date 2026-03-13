@@ -9,7 +9,9 @@ using UnityEngine;
 namespace MCPForUnity.Editor.Services
 {
     /// <summary>
-    /// Automatically starts an MCP session on Unity launch when the HTTP server is already running.
+    /// Automatically starts the MCP server and session on Unity launch when using HTTP Local transport.
+    /// Phase 1: Quick check if server is already reachable.
+    /// Phase 2: If not reachable, start the server and wait for it to come up.
     /// This complements the reload handlers which only resume sessions after domain reloads.
     /// </summary>
     [InitializeOnLoad]
@@ -22,8 +24,11 @@ namespace MCPForUnity.Editor.Services
         // Delay before checking server availability to allow Unity to fully initialize
         private const float InitialDelaySeconds = 2f;
 
-        // How long to wait for server to become available
-        private const float MaxWaitSeconds = 10f;
+        // Phase 1: how long to wait if the server is already running (quick check)
+        private const float Phase1MaxWaitSeconds = 5f;
+
+        // Phase 2: how long to wait after starting a server for it to become reachable
+        private const float Phase2MaxWaitSeconds = 25f;
 
         // Interval between server availability checks
         private const float CheckIntervalSeconds = 1f;
@@ -61,14 +66,18 @@ namespace MCPForUnity.Editor.Services
 
         private static void ScheduleAutoStart()
         {
-            // Wait for initial delay before starting checks
             double startTime = EditorApplication.timeSinceStartup + InitialDelaySeconds;
-            double endTime = startTime + MaxWaitSeconds;
+            double phase1EndTime = startTime + Phase1MaxWaitSeconds;
+            double finalEndTime = startTime + Phase1MaxWaitSeconds + Phase2MaxWaitSeconds;
+            bool serverLaunchAttempted = false;
+            bool inPhase2 = false;
 
             void CheckAndStart()
             {
-                // Abort if we've exceeded the wait time
-                if (EditorApplication.timeSinceStartup > endTime)
+                double now = EditorApplication.timeSinceStartup;
+
+                // Absolute timeout
+                if (now > finalEndTime)
                 {
                     McpLog.Debug("[HttpAutoStart] Timed out waiting for server");
                     return;
@@ -82,7 +91,7 @@ namespace MCPForUnity.Editor.Services
                 }
 
                 // Wait for initial delay
-                if (EditorApplication.timeSinceStartup < startTime)
+                if (now < startTime)
                 {
                     EditorApplication.delayCall += CheckAndStart;
                     return;
@@ -96,30 +105,59 @@ namespace MCPForUnity.Editor.Services
                 }
 
                 // Check if server is reachable
-                if (!MCPServiceLocator.Server.IsLocalHttpServerReachable())
+                if (MCPServiceLocator.Server.IsLocalHttpServerReachable())
                 {
-                    // Server not ready yet, try again after interval
-                    double nextCheck = EditorApplication.timeSinceStartup + CheckIntervalSeconds;
-                    void RetryCheck()
-                    {
-                        if (EditorApplication.timeSinceStartup >= nextCheck)
-                        {
-                            CheckAndStart();
-                        }
-                        else
-                        {
-                            EditorApplication.delayCall += RetryCheck;
-                        }
-                    }
-                    EditorApplication.delayCall += RetryCheck;
+                    TryStartSession();
                     return;
                 }
 
-                // Server is running and no session active - auto-start
-                TryStartSession();
+                // Phase 1 expired — try to start the server if it's not already running
+                if (!inPhase2 && now > phase1EndTime)
+                {
+                    // Check if server process exists but isn't accepting connections yet
+                    if (MCPServiceLocator.Server.IsLocalHttpServerRunning())
+                    {
+                        McpLog.Debug("[HttpAutoStart] Server process detected but not yet reachable, waiting...");
+                        inPhase2 = true;
+                    }
+                    else if (!serverLaunchAttempted && MCPServiceLocator.Server.CanStartLocalServer())
+                    {
+                        serverLaunchAttempted = true;
+                        inPhase2 = true;
+                        McpLog.Info("[HttpAutoStart] No server detected, starting server...");
+                        bool started = MCPServiceLocator.Server.StartLocalHttpServerSilent();
+                        if (!started)
+                        {
+                            McpLog.Warn("[HttpAutoStart] Failed to start server");
+                            return;
+                        }
+                        McpLog.Info("[HttpAutoStart] Server launch initiated, waiting for it to become reachable...");
+                    }
+                    else
+                    {
+                        McpLog.Debug("[HttpAutoStart] Server not reachable and cannot auto-start");
+                        return;
+                    }
+                }
+
+                // Schedule next check
+                ScheduleRetry(CheckAndStart);
             }
 
             EditorApplication.delayCall += CheckAndStart;
+        }
+
+        private static void ScheduleRetry(Action callback)
+        {
+            double nextCheck = EditorApplication.timeSinceStartup + CheckIntervalSeconds;
+            void Retry()
+            {
+                if (EditorApplication.timeSinceStartup >= nextCheck)
+                    callback();
+                else
+                    EditorApplication.delayCall += Retry;
+            }
+            EditorApplication.delayCall += Retry;
         }
 
         private static async void TryStartSession()

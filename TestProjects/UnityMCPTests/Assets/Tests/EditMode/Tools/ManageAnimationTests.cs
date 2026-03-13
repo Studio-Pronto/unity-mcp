@@ -1069,5 +1069,210 @@ namespace MCPForUnityTests.Editor.Tools
             Assert.IsFalse(result.Value<bool>("success"));
             Assert.That(result["message"].ToString(), Does.Contain("already exists"));
         }
+
+        // =============================================================================
+        // Blend Tree - Nested Child Trees
+        // =============================================================================
+
+        [Test]
+        public void AddBlendTreeChildTree_1D_CreatesNestedTree()
+        {
+            string controllerPath = $"{TempRoot}/BT_Nested1D_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Direction", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            // Create a 1D blend tree state
+            var createResult = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_create_blend_tree_1d",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["blendParameter"] = "Speed"
+            }));
+            Assert.IsTrue(createResult.Value<bool>("success"), createResult.ToString());
+
+            // Add a nested 1D child blend tree
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child_tree",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["childTreeName"] = "WalkBlend",
+                ["childBlendType"] = "1d",
+                ["childBlendParameter"] = "Direction",
+                ["threshold"] = 0.5f
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            // Verify the nested structure
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var state = controller.layers[0].stateMachine.states[0].state;
+            Assert.IsTrue(state.motion is BlendTree);
+            var parentTree = (BlendTree)state.motion;
+            Assert.AreEqual(1, parentTree.children.Length);
+            Assert.IsTrue(parentTree.children[0].motion is BlendTree);
+            var childTree = (BlendTree)parentTree.children[0].motion;
+            Assert.AreEqual("WalkBlend", childTree.name);
+            Assert.AreEqual(BlendTreeType.Simple1D, childTree.blendType);
+        }
+
+        [Test]
+        public void AddBlendTreeChildTree_2D_CreatesNestedTree()
+        {
+            string controllerPath = $"{TempRoot}/BT_Nested2D_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("VelX", AnimatorControllerParameterType.Float);
+            controller.AddParameter("VelZ", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            // Create a 2D blend tree state
+            var createResult = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_create_blend_tree_2d",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Movement",
+                ["blendParameterX"] = "VelX",
+                ["blendParameterY"] = "VelZ"
+            }));
+            Assert.IsTrue(createResult.Value<bool>("success"), createResult.ToString());
+
+            // Add a nested 2D child blend tree
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child_tree",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Movement",
+                ["childTreeName"] = "DirectionBlend",
+                ["childBlendType"] = "freeformdirectional2d",
+                ["childBlendParameterX"] = "VelX",
+                ["childBlendParameterY"] = "VelZ",
+                ["position"] = new JArray(0f, 1f)
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var state = controller.layers[0].stateMachine.states[0].state;
+            var parentTree = (BlendTree)state.motion;
+            Assert.AreEqual(1, parentTree.children.Length);
+            var childTree = (BlendTree)parentTree.children[0].motion;
+            Assert.AreEqual("DirectionBlend", childTree.name);
+            Assert.AreEqual(BlendTreeType.FreeformDirectional2D, childTree.blendType);
+        }
+
+        [Test]
+        public void AddBlendTreeChild_WithSlashPath_AddsClipToNestedTree()
+        {
+            string controllerPath = $"{TempRoot}/BT_SlashPath_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Direction", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            // Create 1D blend tree state
+            ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_create_blend_tree_1d",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["blendParameter"] = "Speed"
+            });
+
+            // Add nested child tree
+            ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child_tree",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["childTreeName"] = "WalkBlend",
+                ["childBlendType"] = "1d",
+                ["childBlendParameter"] = "Direction",
+                ["threshold"] = 0.5f
+            });
+
+            // Create a clip to add
+            string clipPath = $"{TempRoot}/TestClip_{Guid.NewGuid():N}.anim";
+            var clip = new AnimationClip { name = "WalkLeft" };
+            AssetDatabase.CreateAsset(clip, clipPath);
+            AssetDatabase.SaveAssets();
+
+            // Add clip to the nested tree using slash path
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion/WalkBlend",
+                ["clipPath"] = clipPath,
+                ["threshold"] = -1.0f
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            // Verify clip is on the nested tree, not the root
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var rootTree = (BlendTree)controller.layers[0].stateMachine.states[0].state.motion;
+            var childTree = (BlendTree)rootTree.children[0].motion;
+            Assert.AreEqual(1, childTree.children.Length);
+            Assert.IsTrue(childTree.children[0].motion is AnimationClip);
+        }
+
+        [Test]
+        public void AddBlendTreeChildTree_MissingChildTreeName_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/BT_MissingName_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_create_blend_tree_1d",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["blendParameter"] = "Speed"
+            });
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child_tree",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["childBlendType"] = "1d",
+                ["childBlendParameter"] = "Speed",
+                ["threshold"] = 0.5f
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("childTreeName"));
+        }
+
+        [Test]
+        public void AddBlendTreeChildTree_InvalidPath_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/BT_InvalidPath_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_create_blend_tree_1d",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion",
+                ["blendParameter"] = "Speed"
+            });
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_blend_tree_child_tree",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Locomotion/NonExistent",
+                ["childTreeName"] = "Test",
+                ["childBlendType"] = "1d",
+                ["childBlendParameter"] = "Speed",
+                ["threshold"] = 0.5f
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("not found"));
+        }
     }
 }

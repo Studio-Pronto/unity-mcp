@@ -60,5 +60,12 @@ namespace MCPForUnity.Editor.Services
         /// </summary>
         /// <returns>True if HTTP transport is enabled and URL satisfies local launch security policy</returns>
         bool CanStartLocalServer();
+
+        /// <summary>
+        /// Start the local HTTP server silently (no confirmation or error dialogs).
+        /// Used for auto-start scenarios where user interaction is not appropriate.
+        /// </summary>
+        /// <returns>True if server launch was initiated, false otherwise</returns>
+        bool StartLocalHttpServerSilent();
     }
 }

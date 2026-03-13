@@ -709,5 +709,54 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         #endregion
+
+        #region StartLocalHttpServerSilent Tests
+
+        [Test]
+        public void StartLocalHttpServerSilent_HttpDisabled_ReturnsFalse()
+        {
+            // Arrange
+            EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, false);
+            EditorConfigurationCache.Instance.Refresh();
+            _service = new ServerManagementService();
+
+            // Act
+            LogAssert.ignoreFailingMessages = true;
+            bool result;
+            try
+            {
+                result = _service.StartLocalHttpServerSilent();
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+
+            // Assert
+            Assert.IsFalse(result, "Should return false when HTTP transport is disabled");
+        }
+
+        [Test]
+        public void StartLocalHttpServerSilent_DoesNotThrow()
+        {
+            // Arrange
+            _service = new ServerManagementService();
+
+            // Act & Assert - Should never throw or show dialogs, even when uvx is unavailable
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                Assert.DoesNotThrow(() =>
+                {
+                    _service.StartLocalHttpServerSilent();
+                }, "StartLocalHttpServerSilent should handle all error cases gracefully without dialogs");
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+        }
+
+        #endregion
     }
 }

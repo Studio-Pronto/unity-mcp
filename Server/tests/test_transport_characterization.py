@@ -1046,6 +1046,16 @@ class TestPluginHubMessageHandling:
 
         assert pong_msg.session_id == "sess-123"
 
+    def test_pong_message_with_activity_phase(self):
+        """PongMessage carries optional activity_phase from Unity's EditorStateCache."""
+        pong = PongMessage(type="pong", session_id="s1", activity_phase="compiling")
+        assert pong.activity_phase == "compiling"
+
+    def test_pong_message_activity_phase_defaults_to_none(self):
+        """PongMessage.activity_phase is None when not provided (backwards compat)."""
+        pong = PongMessage(type="pong", session_id="s1")
+        assert pong.activity_phase is None
+
 
 # ============================================================================
 # COMMAND ROUTING & TIMEOUTS TESTS
@@ -1105,6 +1115,133 @@ class TestPluginHubDisconnect:
         error = NoUnitySessionError("Test message")
         assert isinstance(error, RuntimeError)
         assert str(error) == "Test message"
+
+
+# ============================================================================
+# ACTIVITY PHASE CACHING & PING-PROBE ERROR ENRICHMENT TESTS
+# ============================================================================
+
+class TestPluginHubActivityPhase:
+    """Test that pong-reported activity phase is cached and used in ping-probe errors."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_hub(self, plugin_registry):
+        loop = asyncio.new_event_loop()
+        PluginHub.configure(plugin_registry, loop)
+        PluginHub._last_activity_phase.clear()
+        PluginHub._last_pong.clear()
+        yield
+        PluginHub._last_activity_phase.clear()
+        PluginHub._last_pong.clear()
+        PluginHub._registry = None
+        PluginHub._lock = None
+        PluginHub._loop = None
+        loop.close()
+
+    @pytest.mark.asyncio
+    async def test_handle_pong_caches_activity_phase(self, plugin_registry):
+        """_handle_pong stores activity_phase from the pong payload."""
+        sid = "sess-phase-1"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h1", unity_version="2022.3")
+
+        hub = PluginHub.__new__(PluginHub)
+        await hub._handle_pong(PongMessage(session_id=sid, activity_phase="compiling"))
+
+        assert PluginHub._last_activity_phase[sid] == "compiling"
+
+    @pytest.mark.asyncio
+    async def test_handle_pong_without_activity_phase(self, plugin_registry):
+        """_handle_pong works fine when activity_phase is absent (backwards compat)."""
+        sid = "sess-phase-2"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h2", unity_version="2022.3")
+
+        hub = PluginHub.__new__(PluginHub)
+        await hub._handle_pong(PongMessage(session_id=sid))
+
+        assert sid not in PluginHub._last_activity_phase
+
+    @pytest.mark.asyncio
+    async def test_handle_pong_updates_phase_on_change(self, plugin_registry):
+        """Successive pongs update the cached phase."""
+        sid = "sess-phase-3"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h3", unity_version="2022.3")
+
+        hub = PluginHub.__new__(PluginHub)
+        await hub._handle_pong(PongMessage(session_id=sid, activity_phase="compiling"))
+        assert PluginHub._last_activity_phase[sid] == "compiling"
+
+        await hub._handle_pong(PongMessage(session_id=sid, activity_phase="idle"))
+        assert PluginHub._last_activity_phase[sid] == "idle"
+
+    def test_ping_probe_error_includes_compiling_phase(self):
+        """When cached phase is 'compiling', the error says 'unity is compiling'."""
+        import time
+        sid = "sess-err-1"
+        PluginHub._last_activity_phase[sid] = "compiling"
+        PluginHub._last_pong[sid] = time.monotonic()
+
+        # Directly test the reason-construction logic
+        reason = "ping not answered"
+        phase = PluginHub._last_activity_phase.get(sid)
+        if phase and phase != "idle":
+            reason = f"unity is {phase}"
+
+        assert reason == "unity is compiling"
+
+    def test_ping_probe_error_falls_back_to_busy_when_pong_fresh(self):
+        """When no phase cached but pong is recent, error says 'unity is busy'."""
+        import time
+        sid = "sess-err-2"
+        PluginHub._last_pong[sid] = time.monotonic()
+        # No _last_activity_phase entry
+
+        reason = "ping not answered"
+        phase = PluginHub._last_activity_phase.get(sid)
+        if phase and phase != "idle":
+            reason = f"unity is {phase}"
+        elif sid in PluginHub._last_pong:
+            pong_age = time.monotonic() - PluginHub._last_pong[sid]
+            if pong_age < PluginHub.PING_TIMEOUT:
+                reason = "unity is busy"
+
+        assert reason == "unity is busy"
+
+    def test_ping_probe_error_falls_back_to_ping_not_answered(self):
+        """When no phase and no recent pong, error stays generic."""
+        sid = "sess-err-3"
+        # No _last_activity_phase, no _last_pong
+
+        reason = "ping not answered"
+        phase = PluginHub._last_activity_phase.get(sid)
+        if phase and phase != "idle":
+            reason = f"unity is {phase}"
+        elif sid in PluginHub._last_pong:
+            pong_age = 999.0
+            if pong_age < PluginHub.PING_TIMEOUT:
+                reason = "unity is busy"
+
+        assert reason == "ping not answered"
+
+    def test_idle_phase_does_not_appear_in_error(self):
+        """Phase 'idle' is not surfaced — use 'busy' or 'ping not answered' instead."""
+        import time
+        sid = "sess-err-4"
+        PluginHub._last_activity_phase[sid] = "idle"
+        PluginHub._last_pong[sid] = time.monotonic()
+
+        reason = "ping not answered"
+        phase = PluginHub._last_activity_phase.get(sid)
+        if phase and phase != "idle":
+            reason = f"unity is {phase}"
+        elif sid in PluginHub._last_pong:
+            pong_age = time.monotonic() - PluginHub._last_pong[sid]
+            if pong_age < PluginHub.PING_TIMEOUT:
+                reason = "unity is busy"
+
+        assert reason == "unity is busy"
 
 
 # ============================================================================

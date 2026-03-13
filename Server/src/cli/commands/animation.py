@@ -892,6 +892,56 @@ def controller_add_blend_tree_child(controller_path: str, state_name: str, clip_
         print_success("Added blend tree child")
 
 
+@controller.command("add-blend-tree-child-tree")
+@click.argument("controller_path")
+@click.argument("state_name")
+@click.argument("child_tree_name")
+@click.option("--child-blend-type", required=True, type=click.Choice(["1d", "simpledirectional2d", "freeformdirectional2d", "freeformcartesian2d"]), help="Blend type for the child tree.")
+@click.option("--child-blend-param", default=None, help="Blend parameter for 1D child tree.")
+@click.option("--child-blend-param-x", default=None, help="X blend parameter for 2D child tree.")
+@click.option("--child-blend-param-y", default=None, help="Y blend parameter for 2D child tree.")
+@click.option("--threshold", type=float, default=None, help="Threshold in parent (1D parent).")
+@click.option("--position", type=(float, float), default=None, help="Position in parent (2D parent).")
+@click.option("--layer-index", type=int, default=0, help="Layer index.")
+@handle_unity_errors
+def controller_add_blend_tree_child_tree(controller_path: str, state_name: str, child_tree_name: str, child_blend_type: str, child_blend_param: Optional[str], child_blend_param_x: Optional[str], child_blend_param_y: Optional[str], threshold: Optional[float], position: Optional[tuple], layer_index: int):
+    """Add a nested blend tree as a child of an existing blend tree.
+
+    Use '/' in STATE_NAME to target nested blend trees (e.g., "Locomotion/WalkBlend").
+
+    \b
+    Examples:
+        unity-mcp animation controller add-blend-tree-child-tree "Assets/Anim/Player.controller" "Locomotion" "WalkBlend" \\
+            --child-blend-type 1d --child-blend-param "Direction" --threshold 0.5
+        unity-mcp animation controller add-blend-tree-child-tree "Assets/Anim/Player.controller" "Movement" "DirectionBlend" \\
+            --child-blend-type simpledirectional2d --child-blend-param-x "VelX" --child-blend-param-y "VelZ" --position 0 1
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_add_blend_tree_child_tree",
+        "controllerPath": controller_path,
+        "stateName": state_name,
+        "childTreeName": child_tree_name,
+        "childBlendType": child_blend_type,
+        "layerIndex": layer_index,
+    }
+    if child_blend_param is not None:
+        params["childBlendParameter"] = child_blend_param
+    if child_blend_param_x is not None:
+        params["childBlendParameterX"] = child_blend_param_x
+    if child_blend_param_y is not None:
+        params["childBlendParameterY"] = child_blend_param_y
+    if threshold is not None:
+        params["threshold"] = threshold
+    if position is not None:
+        params["position"] = list(position)
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+    if result.get("success"):
+        print_success(f"Added child blend tree '{child_tree_name}'")
+
+
 # =============================================================================
 # Raw Command (escape hatch for all animation actions)
 # =============================================================================

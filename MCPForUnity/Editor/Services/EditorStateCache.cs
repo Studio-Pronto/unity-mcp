@@ -42,6 +42,12 @@ namespace MCPForUnity.Editor.Services
         private static bool _lastTrackedTestsRunning;
         private static string _lastTrackedActivityPhase;
 
+        /// <summary>
+        /// Last known activity phase, safe to read from background threads (string reads are atomic).
+        /// Used by WebSocket pong messages to inform the server of Unity's current state.
+        /// </summary>
+        public static string LastActivityPhase => _lastTrackedActivityPhase ?? "unknown";
+
         private static JObject _cached;
 
         private sealed class EditorStateSnapshot

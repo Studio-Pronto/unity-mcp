@@ -76,7 +76,8 @@ class TestActionLists:
         expected = {"controller_create", "controller_add_state", "controller_add_transition",
                     "controller_add_parameter", "controller_get_info", "controller_assign",
                     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
-                    "controller_create_blend_tree_1d", "controller_create_blend_tree_2d", "controller_add_blend_tree_child"}
+                    "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
+                    "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree"}
         assert expected.issubset(set(CONTROLLER_ACTIONS))
 
     def test_expected_clip_actions_present(self):
@@ -680,4 +681,41 @@ class TestBlendTreeCLICommands:
                 params = _get_params(mock_run)
                 assert params["action"] == "controller_add_blend_tree_child"
                 assert params["properties"]["stateName"] == "Movement"
+                assert params["properties"]["position"] == [0, 1]
+
+    def test_controller_add_blend_tree_child_tree_1d_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-blend-tree-child-tree", "Assets/Anim/Player.controller", "Locomotion", "WalkBlend",
+                    "--child-blend-type", "1d", "--child-blend-param", "Direction", "--threshold", "0.5"
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_blend_tree_child_tree"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["stateName"] == "Locomotion"
+                assert params["properties"]["childTreeName"] == "WalkBlend"
+                assert params["properties"]["childBlendType"] == "1d"
+                assert params["properties"]["childBlendParameter"] == "Direction"
+                assert params["properties"]["threshold"] == 0.5
+
+    def test_controller_add_blend_tree_child_tree_2d_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-blend-tree-child-tree", "Assets/Anim/Player.controller", "Movement", "DirectionBlend",
+                    "--child-blend-type", "simpledirectional2d",
+                    "--child-blend-param-x", "VelX", "--child-blend-param-y", "VelZ",
+                    "--position", "0", "1"
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_blend_tree_child_tree"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["stateName"] == "Movement"
+                assert params["properties"]["childTreeName"] == "DirectionBlend"
+                assert params["properties"]["childBlendType"] == "simpledirectional2d"
+                assert params["properties"]["childBlendParameterX"] == "VelX"
+                assert params["properties"]["childBlendParameterY"] == "VelZ"
                 assert params["properties"]["position"] == [0, 1]

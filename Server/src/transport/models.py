@@ -47,6 +47,7 @@ class RegisterToolsMessage(BaseModel):
 class PongMessage(BaseModel):
     type: str = "pong"
     session_id: str | None = None
+    activity_phase: str | None = None
 
 
 class CommandResultMessage(BaseModel):

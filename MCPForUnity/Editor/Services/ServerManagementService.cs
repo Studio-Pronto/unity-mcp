@@ -235,15 +235,36 @@ namespace MCPForUnity.Editor.Services
         /// </summary>
         public bool StartLocalHttpServer()
         {
+            return StartLocalHttpServerInternal(silent: false);
+        }
+
+        /// <summary>
+        /// Start the local HTTP server silently (no confirmation or error dialogs).
+        /// Used for auto-start scenarios where user interaction is not appropriate.
+        /// </summary>
+        public bool StartLocalHttpServerSilent()
+        {
+            return StartLocalHttpServerInternal(silent: true);
+        }
+
+        private bool StartLocalHttpServerInternal(bool silent)
+        {
             /// Clean stale Python build artifacts when using a local dev server path
             AssetPathUtility.CleanLocalServerBuildArtifacts();
 
             if (!TryGetLocalHttpServerCommandParts(out _, out _, out var displayCommand, out var error))
             {
-                EditorUtility.DisplayDialog(
-                    "Cannot Start HTTP Server",
-                    error ?? "The server command could not be constructed with the current settings.",
-                    "OK");
+                if (silent)
+                {
+                    McpLog.Warn($"[HttpAutoStart] Cannot start HTTP server: {error ?? "command could not be constructed"}");
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog(
+                        "Cannot Start HTTP Server",
+                        error ?? "The server command could not be constructed with the current settings.",
+                        "OK");
+                }
                 return false;
             }
 
@@ -259,12 +280,19 @@ namespace MCPForUnity.Editor.Services
                     var remaining = GetListeningProcessIdsForPort(uri.Port);
                     if (remaining.Count > 0)
                     {
-                        EditorUtility.DisplayDialog(
-                            "Port In Use",
-                            $"Cannot start the local HTTP server because port {uri.Port} is already in use by PID(s): " +
-                            $"{string.Join(", ", remaining)}\n\n" +
-                            "MCP For Unity will not terminate unrelated processes. Stop the owning process manually or change the HTTP URL.",
-                            "OK");
+                        if (silent)
+                        {
+                            McpLog.Warn($"[HttpAutoStart] Cannot start server: port {uri.Port} already in use by PID(s): {string.Join(", ", remaining)}");
+                        }
+                        else
+                        {
+                            EditorUtility.DisplayDialog(
+                                "Port In Use",
+                                $"Cannot start the local HTTP server because port {uri.Port} is already in use by PID(s): " +
+                                $"{string.Join(", ", remaining)}\n\n" +
+                                "MCP For Unity will not terminate unrelated processes. Stop the owning process manually or change the HTTP URL.",
+                                "OK");
+                        }
                         return false;
                     }
                 }
@@ -286,50 +314,57 @@ namespace MCPForUnity.Editor.Services
                 launchCommand = $"{displayCommand} --pidfile {QuoteIfNeeded(pidFilePath)} --unity-instance-token {instanceToken}";
             }
 
-            if (EditorUtility.DisplayDialog(
-                "Start Local HTTP Server",
-                $"This will start the MCP server in HTTP mode in a new terminal window:\n\n{launchCommand}\n\n" +
-                "Continue?",
-                "Start Server",
-                "Cancel"))
+            // In silent mode, skip the confirmation dialog and proceed directly.
+            if (!silent)
             {
-                try
+                if (!EditorUtility.DisplayDialog(
+                    "Start Local HTTP Server",
+                    $"This will start the MCP server in HTTP mode in a new terminal window:\n\n{launchCommand}\n\n" +
+                    "Continue?",
+                    "Start Server",
+                    "Cancel"))
                 {
-                    // Clear any stale handshake state from prior launches.
-                    ClearLocalServerPidTracking();
-
-                    // Best-effort: delete stale pidfile if it exists.
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(pidFilePath) && File.Exists(pidFilePath))
-                        {
-                            DeletePidFile(pidFilePath);
-                        }
-                    }
-                    catch { }
-
-                    // Launch the server in a new terminal window (keeps user-visible logs).
-                    var startInfo = CreateTerminalProcessStartInfo(launchCommand);
-                    System.Diagnostics.Process.Start(startInfo);
-                    if (!string.IsNullOrEmpty(pidFilePath))
-                    {
-                        StoreLocalHttpServerHandshake(pidFilePath, instanceToken);
-                    }
-                    McpLog.Info($"Started local HTTP server in terminal: {launchCommand}");
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    McpLog.Error($"Failed to start server: {ex.Message}");
-                    EditorUtility.DisplayDialog(
-                        "Error",
-                        $"Failed to start server: {ex.Message}",
-                        "OK");
                     return false;
                 }
             }
 
-            return false;
+            try
+            {
+                // Clear any stale handshake state from prior launches.
+                ClearLocalServerPidTracking();
+
+                // Best-effort: delete stale pidfile if it exists.
+                try
+                {
+                    if (!string.IsNullOrEmpty(pidFilePath) && File.Exists(pidFilePath))
+                    {
+                        DeletePidFile(pidFilePath);
+                    }
+                }
+                catch { }
+
+                // Launch the server in a new terminal window (keeps user-visible logs).
+                var startInfo = CreateTerminalProcessStartInfo(launchCommand);
+                System.Diagnostics.Process.Start(startInfo);
+                if (!string.IsNullOrEmpty(pidFilePath))
+                {
+                    StoreLocalHttpServerHandshake(pidFilePath, instanceToken);
+                }
+                McpLog.Info($"Started local HTTP server in terminal: {launchCommand}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                McpLog.Error($"Failed to start server: {ex.Message}");
+                if (!silent)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Error",
+                        $"Failed to start server: {ex.Message}",
+                        "OK");
+                }
+                return false;
+            }
         }
 
         /// <summary>

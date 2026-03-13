@@ -709,7 +709,8 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             var payload = new JObject
             {
                 ["type"] = "pong",
-                ["session_id"] = _sessionId  // Include session ID for server-side tracking
+                ["session_id"] = _sessionId,
+                ["activity_phase"] = EditorStateCache.LastActivityPhase
             };
             return SendJsonAsync(payload, token);
         }

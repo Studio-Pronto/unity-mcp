@@ -294,6 +294,24 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             Assert.Pass("EditorStateCache uses lock pattern for concurrent access safety");
         }
 
+        /// <summary>
+        /// Current behavior: LastActivityPhase exposes the last tracked activity phase
+        /// for background-thread access (used by WebSocket pong messages).
+        /// </summary>
+        [Test]
+        public void EditorStateCache_LastActivityPhase_ReturnsValidPhase()
+        {
+            // LastActivityPhase should return a non-null string (defaults to "unknown" before first update)
+            string phase = EditorStateCache.LastActivityPhase;
+            Assert.IsNotNull(phase, "LastActivityPhase should never return null");
+            Assert.IsNotEmpty(phase, "LastActivityPhase should never return empty string");
+
+            var validPhases = new[] { "idle", "compiling", "domain_reload", "asset_import",
+                "running_tests", "playmode_transition", "unknown" };
+            CollectionAssert.Contains(validPhases, phase,
+                $"LastActivityPhase '{phase}' should be one of the known phases");
+        }
+
         #endregion
 
         #region Section 3: BridgeControlService - Transport Management

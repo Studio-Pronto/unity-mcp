@@ -119,6 +119,8 @@ class PluginHub(WebSocketEndpoint):
     _loop: asyncio.AbstractEventLoop | None = None
     # session_id -> last pong timestamp (monotonic)
     _last_pong: ClassVar[dict[str, float]] = {}
+    # session_id -> last reported activity phase (e.g. "compiling", "domain_reload", "idle")
+    _last_activity_phase: ClassVar[dict[str, str]] = {}
     # session_id -> ping task
     _ping_tasks: ClassVar[dict[str, asyncio.Task]] = {}
 
@@ -228,8 +230,9 @@ class PluginHub(WebSocketEndpoint):
                 ping_task = cls._ping_tasks.pop(session_id, None)
                 if ping_task and not ping_task.done():
                     ping_task.cancel()
-                # Clean up last pong tracking
+                # Clean up last pong/phase tracking
                 cls._last_pong.pop(session_id, None)
+                cls._last_activity_phase.pop(session_id, None)
                 # Fail-fast any in-flight commands for this session to avoid waiting for COMMAND_TIMEOUT.
                 pending_ids = [
                     command_id
@@ -615,10 +618,12 @@ class PluginHub(WebSocketEndpoint):
         session_id = payload.session_id
         if session_id:
             await registry.touch(session_id)
-            # Record last pong time for staleness detection (under lock for consistency)
+            # Record last pong time and activity phase for staleness/state detection
             if lock is not None:
                 async with lock:
                     cls._last_pong[session_id] = time.monotonic()
+                    if payload.activity_phase:
+                        cls._last_activity_phase[session_id] = payload.activity_phase
 
     @classmethod
     async def _ping_loop(cls, session_id: str, websocket: WebSocket) -> None:
@@ -706,6 +711,7 @@ class PluginHub(WebSocketEndpoint):
             websocket = cls._connections.pop(session_id, None)
             ping_task = cls._ping_tasks.pop(session_id, None)
             cls._last_pong.pop(session_id, None)
+            cls._last_activity_phase.pop(session_id, None)
             keys_to_remove: list[object] = []
             for key, entry in list(cls._pending.items()):
                 if entry.get("session_id") == session_id:
@@ -996,11 +1002,22 @@ class PluginHub(WebSocketEndpoint):
                             break
                     await asyncio.sleep(0.1)
                 else:
-                    # Not ready within the bounded window: return retry hint without sending.
+                    # Not ready within the bounded window: include last known
+                    # activity phase so callers can distinguish "compiling" from
+                    # "truly unreachable".
+                    reason = "ping not answered"
+                    phase = cls._last_activity_phase.get(session_id)
+                    if phase and phase != "idle":
+                        reason = f"unity is {phase}"
+                    elif session_id in cls._last_pong:
+                        pong_age = time.monotonic() - cls._last_pong[session_id]
+                        if pong_age < cls.PING_TIMEOUT:
+                            reason = "unity is busy"
                     return MCPResponse(
                         success=False,
-                        error=f"Unity session not ready for '{command_type}' (ping not answered); please retry",
+                        error=f"Unity session not ready for '{command_type}' ({reason}); please retry",
                         hint="retry",
+                        data={"reason": reason, "retry_after_ms": 1000},
                     ).model_dump()
 
         return await cls.send_command(session_id, command_type, params)
