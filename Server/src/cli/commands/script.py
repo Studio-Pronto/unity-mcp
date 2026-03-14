@@ -9,7 +9,6 @@ from cli.utils.config import get_config
 from cli.utils.output import format_output, print_error, print_success
 from cli.utils.connection import run_command, handle_unity_errors
 from cli.utils.parsers import parse_json_list_or_exit
-from cli.utils.confirmation import confirm_destructive_action
 
 
 @click.group()
@@ -125,42 +124,6 @@ def read(path: str, start_line: Optional[int], line_count: Optional[int]):
             click.echo(format_output(result, config.format))
     else:
         click.echo(format_output(result, config.format))
-
-
-@script.command("delete")
-@click.argument("path")
-@click.option(
-    "--force", "-f",
-    is_flag=True,
-    help="Skip confirmation prompt."
-)
-@handle_unity_errors
-def delete(path: str, force: bool):
-    """Delete a C# script.
-
-    \b
-    Examples:
-        unity-mcp script delete "Assets/Scripts/OldScript.cs"
-    """
-    config = get_config()
-
-    confirm_destructive_action("Delete", "script", path, force)
-
-    parts = path.rsplit("/", 1)
-    filename = parts[-1]
-    directory = parts[0] if len(parts) > 1 else "Assets"
-    name = filename[:-3] if filename.endswith(".cs") else filename
-
-    params: dict[str, Any] = {
-        "action": "delete",
-        "name": name,
-        "path": directory,
-    }
-
-    result = run_command("manage_script", params, config)
-    click.echo(format_output(result, config.format))
-    if result.get("success"):
-        print_success(f"Deleted: {path}")
 
 
 @script.command("edit")

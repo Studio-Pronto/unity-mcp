@@ -23,7 +23,6 @@ namespace MCPForUnity.Editor.Tools
         {
             "create",
             "modify",
-            "delete",
             "create_sprite",
             "apply_pattern",
             "apply_gradient",
@@ -70,8 +69,6 @@ namespace MCPForUnity.Editor.Tools
                         return CreateTexture(@params, action == "create_sprite");
                     case "modify":
                         return ModifyTexture(@params);
-                    case "delete":
-                        return DeleteTexture(path);
                     case "apply_pattern":
                         return ApplyPattern(@params);
                     case "apply_gradient":
@@ -329,29 +326,6 @@ namespace MCPForUnity.Editor.Tools
             catch (Exception e)
             {
                 return new ErrorResponse($"Failed to modify texture: {e.Message}");
-            }
-        }
-
-        private static object DeleteTexture(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-                return new ErrorResponse("'path' is required for delete.");
-
-            string fullPath = AssetPathUtility.SanitizeAssetPath(path);
-            if (!AssetExists(fullPath))
-                return new ErrorResponse($"Texture not found at path: {fullPath}");
-
-            try
-            {
-                bool success = AssetDatabase.DeleteAsset(fullPath);
-                if (success)
-                    return new SuccessResponse($"Texture deleted: {fullPath}");
-                else
-                    return new ErrorResponse($"Failed to delete texture: {fullPath}");
-            }
-            catch (Exception e)
-            {
-                return new ErrorResponse($"Error deleting texture: {e.Message}");
             }
         }
 

@@ -352,8 +352,22 @@ namespace MCPForUnity.Editor.Tools
 
                 bool modified = false; // Flag to track if any changes were made
 
-                // --- NEW: Handle GameObject / Prefab Component Modification ---
-                if (asset is GameObject gameObject)
+                // --- Check if the asset's importer is a ModelImporter (FBX, OBJ, etc.) ---
+                AssetImporter assetImporter = AssetImporter.GetAtPath(fullPath);
+                if (assetImporter is ModelImporter modelImporter)
+                {
+                    modified = ApplyModelImporterProperties(modelImporter, properties);
+                    if (modified)
+                    {
+                        modelImporter.SaveAndReimport();
+                        return new SuccessResponse(
+                            $"Model import settings for '{fullPath}' modified and reimported.",
+                            GetAssetData(fullPath)
+                        );
+                    }
+                }
+                // --- Handle GameObject / Prefab Component Modification ---
+                else if (asset is GameObject gameObject)
                 {
                     // Iterate through the properties JSON: keys are component names, values are properties objects for that component
                     foreach (var prop in properties.Properties())
@@ -447,7 +461,7 @@ namespace MCPForUnity.Editor.Tools
                         McpLog.Warn($"Could not get TextureImporter for {fullPath}.");
                     }
                 }
-                // TODO: Add modification logic for other common asset types (Models, AudioClips importers, etc.)
+                // TODO: Add modification logic for AudioClips importers, etc.
                 else // Fallback for other asset types OR direct properties on non-GameObject assets
                 {
                     // This block handles non-GameObject/Material/ScriptableObject/Texture assets.
@@ -1021,6 +1035,59 @@ namespace MCPForUnity.Editor.Tools
                 );
             }
             return false;
+        }
+
+        private static bool ApplyModelImporterProperties(ModelImporter importer, JObject properties)
+        {
+            bool modified = false;
+
+            // Handle material remap separately — uses AddRemap/RemoveRemap API, not simple property setting
+            if (properties["materialRemap"] is JObject remapObj)
+            {
+                foreach (var prop in remapObj.Properties())
+                {
+                    string sourceName = prop.Name;
+                    var sourceId = new AssetImporter.SourceAssetIdentifier(typeof(Material), sourceName);
+
+                    if (prop.Value == null || prop.Value.Type == JTokenType.Null)
+                    {
+                        importer.RemoveRemap(sourceId);
+                        modified = true;
+                    }
+                    else
+                    {
+                        string targetPath = AssetPathUtility.SanitizeAssetPath(prop.Value.ToString());
+                        if (targetPath == null)
+                        {
+                            McpLog.Warn($"[ManageAsset] Invalid material path for remap '{sourceName}': {prop.Value}");
+                            continue;
+                        }
+                        var targetMat = AssetDatabase.LoadAssetAtPath<Material>(targetPath);
+                        if (targetMat != null)
+                        {
+                            importer.AddRemap(sourceId, targetMat);
+                            modified = true;
+                        }
+                        else
+                        {
+                            McpLog.Warn($"[ManageAsset] Material not found for remap '{sourceName}': {targetPath}");
+                        }
+                    }
+                }
+            }
+
+            // Apply remaining properties via reflection (globalScale, importAnimation, animationType, etc.)
+            var reflectionProperties = new JObject();
+            foreach (var prop in properties.Properties())
+            {
+                if (prop.Name != "materialRemap")
+                    reflectionProperties[prop.Name] = prop.Value;
+            }
+
+            if (reflectionProperties.HasValues)
+                modified |= ApplyObjectProperties(importer, reflectionProperties);
+
+            return modified;
         }
 
         // --- Data Serialization ---

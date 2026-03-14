@@ -7,12 +7,11 @@ from typing import Optional
 from cli.utils.config import get_config
 from cli.utils.output import format_output, print_error, print_success
 from cli.utils.connection import run_command, handle_unity_errors
-from cli.utils.confirmation import confirm_destructive_action
 
 
 @click.group()
 def shader():
-    """Shader operations - create, read, update, delete shaders."""
+    """Shader operations - create, read, update shaders."""
     pass
 
 
@@ -192,35 +191,3 @@ def update_shader(path: str, contents: Optional[str], file_path: Optional[str]):
         print_success(f"Updated shader: {path}")
 
 
-@shader.command("delete")
-@click.argument("path")
-@click.option(
-    "--force", "-f",
-    is_flag=True,
-    help="Skip confirmation prompt."
-)
-@handle_unity_errors
-def delete_shader(path: str, force: bool):
-    """Delete a shader.
-
-    \\b
-    Examples:
-        unity-mcp shader delete "Assets/Shaders/OldShader.shader"
-        unity-mcp shader delete "Assets/Shaders/OldShader.shader" --force
-    """
-    config = get_config()
-
-    confirm_destructive_action("Delete", "shader", path, force)
-
-    import os
-    name = os.path.splitext(os.path.basename(path))[0]
-    directory = os.path.dirname(path)
-
-    result = run_command("manage_shader", {
-        "action": "delete",
-        "name": name,
-        "path": directory or "Assets/",
-    }, config)
-    click.echo(format_output(result, config.format))
-    if result.get("success"):
-        print_success(f"Deleted shader: {path}")

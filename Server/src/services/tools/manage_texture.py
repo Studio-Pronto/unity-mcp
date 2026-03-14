@@ -378,7 +378,7 @@ def _normalize_import_settings(value: Any) -> tuple[dict | None, str | None]:
     description=(
         "Procedural texture generation for Unity. Creates textures with solid fills, "
         "patterns (checkerboard, stripes, dots, grid, brick), gradients, and noise. "
-        "Actions: create, modify, delete, create_sprite, apply_pattern, apply_gradient, apply_noise"
+        "Actions: create, modify, create_sprite, apply_pattern, apply_gradient, apply_noise"
     ),
     annotations=ToolAnnotations(
         title="Manage Texture",
@@ -390,7 +390,6 @@ async def manage_texture(
     action: Annotated[Literal[
         "create",
         "modify",
-        "delete",
         "create_sprite",
         "apply_pattern",
         "apply_gradient",

@@ -19,6 +19,7 @@ Complete reference for all MCP tools. Each tool includes parameters, types, and 
 - [Graphics Tools](#graphics-tools)
 - [Package Tools](#package-tools)
 - [ProBuilder Tools](#probuilder-tools)
+- [Animation Tools](#animation-tools)
 
 ---
 
@@ -433,14 +434,6 @@ get_sha(uri="mcpforunity://path/Assets/Scripts/MyScript.cs")
 # Returns: {"sha256": "...", "lengthBytes": 1234, "lastModifiedUtc": "..."}
 ```
 
-### delete_script
-
-Delete a script file.
-
-```python
-delete_script(uri="mcpforunity://path/Assets/Scripts/OldScript.cs")
-```
-
 ---
 
 ## Asset Tools
@@ -482,6 +475,27 @@ manage_asset(action="create_folder", path="Assets/NewFolder")
 
 # Delete
 manage_asset(action="delete", path="Assets/OldAsset.asset")
+
+# Modify model import settings (FBX/OBJ)
+manage_asset(
+    action="modify",
+    path="Assets/Models/Character.fbx",
+    properties={"globalScale": 0.01, "importAnimation": False, "isReadable": True}
+)
+
+# Remap materials on imported model
+manage_asset(
+    action="modify",
+    path="Assets/Models/Character.fbx",
+    properties={"materialRemap": {"BodyMat": "Assets/Materials/Body.mat"}}
+)
+
+# Clear a material remap (pass null)
+manage_asset(
+    action="modify",
+    path="Assets/Models/Character.fbx",
+    properties={"materialRemap": {"BodyMat": None}}
+)
 ```
 
 ### manage_prefabs
@@ -1257,3 +1271,93 @@ manage_probuilder(action="validate_mesh", target="MyCube")
 ```
 
 See also: [ProBuilder Workflow Guide](probuilder-guide.md) for detailed patterns and complex object examples.
+
+---
+
+## Animation Tools
+
+### manage_animation
+
+Unified animation tool. Action prefixes: `animator_*` (runtime control), `controller_*` (AnimatorController CRUD), `clip_*` (AnimationClip creation/editing).
+
+```python
+# Create an AnimatorController
+manage_animation(
+    action="controller_create",
+    controller_path="Assets/Animators/Player.controller"
+)
+
+# Add states
+manage_animation(action="controller_add_state", controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Idle"})
+manage_animation(action="controller_add_state", controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Walk"})
+
+# Add transition
+manage_animation(action="controller_add_transition", controller_path="Assets/Animators/Player.controller",
+    properties={"fromState": "Idle", "toState": "Walk"})
+
+# Add parameter
+manage_animation(action="controller_add_parameter", controller_path="Assets/Animators/Player.controller",
+    properties={"parameterName": "Speed", "parameterType": "float"})
+
+# Get controller info
+manage_animation(action="controller_get_info", controller_path="Assets/Animators/Player.controller")
+
+# Assign controller to GameObject
+manage_animation(action="controller_assign", controller_path="Assets/Animators/Player.controller",
+    target="Player")
+
+# Create a 1D blend tree
+manage_animation(action="controller_create_blend_tree_1d",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Locomotion", "blendParameter": "Speed"})
+
+# Create a 2D blend tree
+manage_animation(action="controller_create_blend_tree_2d",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Movement", "blendParameterX": "VelX", "blendParameterY": "VelZ"})
+
+# Add clip to blend tree
+manage_animation(action="controller_add_blend_tree_child",
+    controller_path="Assets/Animators/Player.controller",
+    clip_path="Assets/Animations/Walk.anim",
+    properties={"stateName": "Locomotion", "threshold": 0.5})
+
+# Add nested child blend tree
+manage_animation(action="controller_add_blend_tree_child_tree",
+    controller_path="Assets/Animators/Player.controller",
+    properties={
+        "stateName": "Locomotion",
+        "childTreeName": "WalkBlend",
+        "childBlendType": "1d",
+        "childBlendParameter": "Direction",
+        "threshold": 0.5
+    })
+
+# Add clip to nested blend tree (use '/' path)
+manage_animation(action="controller_add_blend_tree_child",
+    controller_path="Assets/Animators/Player.controller",
+    clip_path="Assets/Animations/WalkLeft.anim",
+    properties={"stateName": "Locomotion/WalkBlend", "threshold": -1.0})
+
+# Create an AnimationClip
+manage_animation(action="clip_create", clip_path="Assets/Animations/Bounce.anim",
+    properties={"loop": True})
+
+# Add keyframe curve to clip
+manage_animation(action="clip_add_curve", clip_path="Assets/Animations/Bounce.anim",
+    properties={
+        "relativePath": "",
+        "componentType": "Transform",
+        "propertyPath": "localPosition.y",
+        "keys": [{"time": 0, "value": 0}, {"time": 0.5, "value": 1}, {"time": 1, "value": 0}]
+    })
+
+# Animator runtime control
+manage_animation(action="animator_play", target="Player",
+    properties={"stateName": "Walk"})
+manage_animation(action="animator_set_parameter", target="Player",
+    properties={"parameterName": "Speed", "value": 1.5})
+manage_animation(action="animator_get_info", target="Player")
+```

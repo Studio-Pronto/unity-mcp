@@ -119,11 +119,9 @@ namespace MCPForUnity.Editor.Tools
                     return ReadShader(fullPath, relativePath);
                 case "update":
                     return UpdateShader(fullPath, relativePath, name, contents);
-                case "delete":
-                    return DeleteShader(fullPath, relativePath);
                 default:
                     return new ErrorResponse(
-                        $"Unknown action: '{action}'. Valid actions are: create, read, update, delete."
+                        $"Unknown action: '{action}'. Valid actions are: create, read, update. For deletion, use manage_asset."
                     );
             }
         }
@@ -256,36 +254,6 @@ namespace MCPForUnity.Editor.Tools
             catch (Exception e)
             {
                 return new ErrorResponse($"Failed to update shader '{relativePath}': {e.Message}");
-            }
-        }
-
-        private static object DeleteShader(string fullPath, string relativePath)
-        {
-            if (!File.Exists(fullPath))
-            {
-                return new ErrorResponse($"Shader not found at '{relativePath}'.");
-            }
-
-            try
-            {
-                // Delete the asset through Unity's AssetDatabase first
-                bool success = AssetDatabase.DeleteAsset(relativePath);
-                if (!success)
-                {
-                    return new ErrorResponse($"Failed to delete shader through Unity's AssetDatabase: '{relativePath}'");
-                }
-
-                // If the file still exists (rare case), try direct deletion
-                if (File.Exists(fullPath))
-                {
-                    File.Delete(fullPath);
-                }
-
-                return new SuccessResponse($"Shader '{Path.GetFileName(relativePath)}' deleted successfully.");
-            }
-            catch (Exception e)
-            {
-                return new ErrorResponse($"Failed to delete shader '{relativePath}': {e.Message}");
             }
         }
 

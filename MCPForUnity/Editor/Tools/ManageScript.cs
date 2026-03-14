@@ -222,8 +222,6 @@ namespace MCPForUnity.Editor.Tools
                 case "update":
                     McpLog.Warn("manage_script.update is deprecated; prefer apply_text_edits. Serving update for backward compatibility.");
                     return UpdateScript(fullPath, relativePath, name, contents);
-                case "delete":
-                    return DeleteScript(fullPath, relativePath);
                 case "apply_text_edits":
                     {
                         var textEdits = p.GetRaw("edits") as JArray;
@@ -303,7 +301,7 @@ namespace MCPForUnity.Editor.Tools
                     }
                 default:
                     return new ErrorResponse(
-                        $"Unknown action: '{action}'. Valid actions are: create, delete, apply_text_edits, validate, read (deprecated), update (deprecated), edit (deprecated)."
+                        $"Unknown action: '{action}'. Valid actions are: create, apply_text_edits, validate, read (deprecated), update (deprecated), edit (deprecated). For deletion, use manage_asset."
                     );
             }
         }
@@ -1201,39 +1199,6 @@ namespace MCPForUnity.Editor.Tools
             if (bracketStack.Count > 0) { line = bracketStack.Peek(); expected = ']'; return false; }
 
             return true;
-        }
-
-        private static object DeleteScript(string fullPath, string relativePath)
-        {
-            if (!File.Exists(fullPath))
-            {
-                return new ErrorResponse($"Script not found at '{relativePath}'. Cannot delete.");
-            }
-
-            try
-            {
-                // Use AssetDatabase.MoveAssetToTrash for safer deletion (allows undo)
-                bool deleted = AssetDatabase.MoveAssetToTrash(relativePath);
-                if (deleted)
-                {
-                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                    return new SuccessResponse(
-                        $"Script '{Path.GetFileName(relativePath)}' moved to trash successfully.",
-                        new { deleted = true }
-                    );
-                }
-                else
-                {
-                    // Fallback or error if MoveAssetToTrash fails
-                    return new ErrorResponse(
-                        $"Failed to move script '{relativePath}' to trash. It might be locked or in use."
-                    );
-                }
-            }
-            catch (Exception e)
-            {
-                return new ErrorResponse($"Error deleting script '{relativePath}': {e.Message}");
-            }
         }
 
         /// <summary>

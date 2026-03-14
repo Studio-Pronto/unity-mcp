@@ -441,41 +441,6 @@ async def create_script(
 
 @mcp_for_unity_tool(
     unity_target="manage_script",
-    description="Delete a C# script by URI or Assets-relative path.",
-    annotations=ToolAnnotations(
-        title="Delete Script",
-        destructiveHint=True,
-    ),
-)
-async def delete_script(
-    ctx: Context,
-    uri: Annotated[str, "URI of the script to delete under Assets/ directory, mcpforunity://path/Assets/... or file://... or Assets/..."],
-) -> dict[str, Any]:
-    """Delete a C# script by URI."""
-    unity_instance = await get_unity_instance_from_context(ctx)
-    await ctx.info(
-        f"Processing delete_script: {uri} (unity_instance={unity_instance or 'default'})")
-    name, directory = _split_uri(uri)
-    if not directory or directory.split("/")[0].lower() != "assets":
-        return {"success": False, "code": "path_outside_assets", "message": "URI must resolve under 'Assets/'."}
-    params = {"action": "delete", "name": name, "path": directory}
-
-    async def _verify_delete():
-        verify = await send_with_unity_instance(
-            transport.legacy.unity_connection.async_send_command_with_retry,
-            unity_instance, "manage_script",
-            {"action": "read", "name": name, "path": directory},
-        )
-        if isinstance(verify, dict) and not verify.get("success"):
-            return {"success": True, "message": "Script deleted (verified after domain reload)."}
-        return None
-
-    resp = await send_mutation(ctx, unity_instance, "manage_script", params, verify_after_disconnect=_verify_delete)
-    return resp if isinstance(resp, dict) else {"success": False, "message": str(resp)}
-
-
-@mcp_for_unity_tool(
-    unity_target="manage_script",
     description="Validate a C# script and return diagnostics.",
     annotations=ToolAnnotations(
         title="Validate Script",
@@ -523,7 +488,7 @@ async def validate_script(
 
 
 @mcp_for_unity_tool(
-    description="Compatibility router for legacy script operations. Prefer apply_text_edits (ranges) or script_apply_edits (structured) for edits. Read-only action: read. Modifying actions: create, delete.",
+    description="Compatibility router for legacy script operations. Prefer apply_text_edits (ranges) or script_apply_edits (structured) for edits. Read-only action: read. Modifying action: create.",
     annotations=ToolAnnotations(
         title="Manage Script",
         destructiveHint=True,
@@ -531,7 +496,7 @@ async def validate_script(
 )
 async def manage_script(
     ctx: Context,
-    action: Annotated[Literal['create', 'read', 'delete'], "Perform CRUD operations on C# scripts."],
+    action: Annotated[Literal['create', 'read'], "Perform CRUD operations on C# scripts."],
     name: Annotated[str, "Script name (no .cs extension)", "Name of the script to create"],
     path: Annotated[str, "Asset path (default: 'Assets/')", "Path under Assets/ to create the script at, e.g., 'Assets/Scripts/My.cs'"],
     contents: Annotated[str, "Contents of the script to create",
@@ -581,8 +546,6 @@ async def manage_script(
                 )
                 if action == "create" and isinstance(verify, dict) and verify.get("success"):
                     return {"success": True, "message": "Script created (verified after domain reload).", "data": verify.get("data")}
-                elif action == "delete" and isinstance(verify, dict) and not verify.get("success"):
-                    return {"success": True, "message": "Script deleted (verified after domain reload)."}
                 return None
 
             response = await send_mutation(ctx, unity_instance, "manage_script", params, verify_after_disconnect=_verify_mutation)

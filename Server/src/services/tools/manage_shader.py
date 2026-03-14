@@ -12,16 +12,16 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 
 @mcp_for_unity_tool(
     group="vfx",
-    description="Manages shader scripts in Unity (create, read, update, delete). Read-only action: read. Modifying actions: create, update, delete.",
+    description="Manages shader scripts in Unity (create, read, update). Read-only action: read. Modifying actions: create, update.",
     annotations=ToolAnnotations(
         title="Manage Shader",
-        # Note: 'read' action is non-destructive; 'create', 'update', 'delete' are destructive
+        # Note: 'read' action is non-destructive; 'create', 'update' are destructive
         destructiveHint=True,
     ),
 )
 async def manage_shader(
     ctx: Context,
-    action: Annotated[Literal['create', 'read', 'update', 'delete'], "Perform CRUD operations on shader scripts."],
+    action: Annotated[Literal['create', 'read', 'update'], "Perform CRUD operations on shader scripts."],
     name: Annotated[str, "Shader name (no .cs extension)"],
     path: Annotated[str, "Asset path (default: \"Assets/\")"],
     contents: Annotated[str,

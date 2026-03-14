@@ -23,7 +23,7 @@ Before applying a template:
 1. Check editor state     → mcpforunity://editor/state
 2. Understand the scene   → mcpforunity://scene/gameobject-api
 3. Find what you need     → find_gameobjects or resources
-4. Take action            → tools (manage_gameobject, create_script, script_apply_edits, apply_text_edits, validate_script, delete_script, get_sha, etc.)
+4. Take action            → tools (manage_gameobject, create_script, script_apply_edits, apply_text_edits, validate_script, manage_asset, get_sha, etc.)
 5. Verify results         → read_console, capture_screenshot (in manage_scene), resources
 ```
 
@@ -158,7 +158,8 @@ uri="file:///full/path/to/file.cs"
 | **Scene** | `manage_scene`, `find_gameobjects` | Scene operations, finding objects |
 | **Objects** | `manage_gameobject`, `manage_components` | Creating/modifying GameObjects |
 | **Scripts** | `create_script`, `script_apply_edits`, `refresh_unity` | C# code management |
-| **Assets** | `manage_asset`, `manage_prefabs` | Asset operations |
+| **Assets** | `manage_asset`, `manage_prefabs` | Asset operations, model import settings (FBX/OBJ), material remapping |
+| **Animation** | `manage_animation` | Animator control, AnimatorController CRUD (states, transitions, blend trees), AnimationClip creation |
 | **Editor** | `manage_editor`, `execute_menu_item`, `read_console` | Editor control, package deployment (`deploy_package`/`restore_package` actions) |
 | **Testing** | `run_tests`, `get_test_job` | Unity Test Framework |
 | **Batch** | `batch_execute` | Parallel/bulk operations |

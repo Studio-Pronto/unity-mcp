@@ -37,7 +37,7 @@ ALL_ACTIONS = ANIMATOR_ACTIONS + CONTROLLER_ACTIONS + CLIP_ACTIONS #Not loaded i
     description=(
         "Manage Unity animation: Animator control and AnimationClip creation. "
         "Action prefixes: animator_* (play, crossfade, set parameters, get info), "
-        "controller_* (create AnimatorControllers, add states/transitions/parameters), "
+        "controller_* (create AnimatorControllers, add states/transitions/parameters/blend trees), "
         "clip_* (create clips, add keyframe curves, assign to GameObjects). "
         "Action-specific parameters go in `properties` (keys match ManageAnimation.cs)."
     ),

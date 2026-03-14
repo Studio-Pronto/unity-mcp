@@ -701,13 +701,6 @@ class TestScriptCommands:
                 cli, ["script", "read", "Assets/Scripts/Test.cs"])
             assert result.exit_code == 0
 
-    def test_script_delete(self, runner, mock_unity_response):
-        """Test script delete command."""
-        with patch("cli.commands.script.run_command", return_value=mock_unity_response):
-            result = runner.invoke(
-                cli, ["script", "delete", "Assets/Scripts/Old.cs", "--force"])
-            assert result.exit_code == 0
-
 
 # =============================================================================
 # Global Options Tests
@@ -919,13 +912,6 @@ class TestShaderCommands:
         with patch("cli.commands.shader.run_command", return_value=mock_unity_response):
             result = runner.invoke(
                 cli, ["shader", "create", "NewShader", "--path", "Assets/Shaders"])
-            assert result.exit_code == 0
-
-    def test_shader_delete(self, runner, mock_unity_response):
-        """Test deleting a shader."""
-        with patch("cli.commands.shader.run_command", return_value=mock_unity_response):
-            result = runner.invoke(
-                cli, ["shader", "delete", "Assets/Shaders/Old.shader", "--force"])
             assert result.exit_code == 0
 
 
@@ -1272,14 +1258,6 @@ class TestTextureCommands:
             result = runner.invoke(cli, [
                 "texture", "modify", "Assets/Textures/Test.png",
                 "--set-pixels", '{"x":0,"y":0,"width":10,"height":10,"color":[255,0,0,255]}'
-            ])
-            assert result.exit_code == 0
-
-    def test_texture_delete(self, runner, mock_unity_response):
-        """Test texture delete command."""
-        with patch("cli.commands.texture.run_command", return_value=mock_unity_response):
-            result = runner.invoke(cli, [
-                "texture", "delete", "Assets/Textures/Old.png", "--force"
             ])
             assert result.exit_code == 0
 
