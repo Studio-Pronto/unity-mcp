@@ -660,7 +660,15 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 ["result"] = resultToken
             };
 
-            await SendJsonAsync(responsePayload, token).ConfigureAwait(false);
+            try
+            {
+                await SendJsonAsync(responsePayload, token).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                // Socket was closed/disposed while we were executing the command — nothing to send to.
+                McpLog.Debug($"[WebSocket] Could not send result for '{commandName}': socket already closed");
+            }
         }
 
         private async Task KeepAliveLoopAsync(CancellationToken token)
