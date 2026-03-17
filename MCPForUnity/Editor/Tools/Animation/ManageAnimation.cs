@@ -43,6 +43,17 @@ namespace MCPForUnity.Editor.Tools.Animation
             { "child_blend_parameter_x", "childBlendParameterX" },
             { "child_blend_parameter_y", "childBlendParameterY" },
             { "transition_index", "transitionIndex" },
+            { "write_default_values", "writeDefaultValues" },
+            { "ik_on_feet", "iKOnFeet" },
+            { "cycle_offset", "cycleOffset" },
+            { "speed_parameter", "speedParameter" },
+            { "cycle_offset_parameter", "cycleOffsetParameter" },
+            { "mirror_parameter", "mirrorParameter" },
+            { "time_parameter", "timeParameter" },
+            { "has_fixed_duration", "hasFixedDuration" },
+            { "interruption_source", "interruptionSource" },
+            { "ordered_interruption", "orderedInterruption" },
+            { "can_transition_to_self", "canTransitionToSelf" },
         };
 
         private static JObject NormalizeParams(JObject source)
@@ -238,8 +249,10 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "remove_state": return ControllerCreate.RemoveState(@params);
                 case "remove_transition": return ControllerCreate.RemoveTransition(@params);
                 case "remove_parameter": return ControllerCreate.RemoveParameter(@params);
+                case "modify_state": return ControllerCreate.ModifyState(@params);
+                case "modify_transition": return ControllerCreate.ModifyTransition(@params);
                 default:
-                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree" };
+                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree" };
             }
         }
 

@@ -320,6 +320,9 @@ namespace MCPForUnity.Editor.Tools.Animation
                             hasExitTime = t.hasExitTime,
                             exitTime = t.exitTime,
                             duration = t.duration,
+                            offset = t.offset,
+                            hasFixedDuration = t.hasFixedDuration,
+                            canTransitionToSelf = t.canTransitionToSelf,
                             conditionCount = t.conditions.Length,
                             conditions
                         });
@@ -328,9 +331,12 @@ namespace MCPForUnity.Editor.Tools.Animation
                     states.Add(new
                     {
                         name = cs.state.name,
+                        tag = cs.state.tag,
                         speed = cs.state.speed,
                         hasMotion = cs.state.motion != null,
                         motionName = cs.state.motion?.name,
+                        writeDefaultValues = cs.state.writeDefaultValues,
+                        iKOnFeet = cs.state.iKOnFeet,
                         isDefault = layer.stateMachine.defaultState == cs.state,
                         transitionCount = cs.state.transitions.Length,
                         transitions
@@ -604,6 +610,284 @@ namespace MCPForUnity.Editor.Tools.Animation
                 {
                     parameterName = paramName,
                     totalParameters = controller.parameters.Length
+                }
+            };
+        }
+
+        public static object ModifyState(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string stateName = @params["stateName"]?.ToString();
+            if (string.IsNullOrEmpty(stateName))
+                return new { success = false, message = "'stateName' is required" };
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range (controller has {controller.layers.Length} layers)" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+            var targetState = FindState(rootStateMachine, stateName);
+            if (targetState == null)
+                return new { success = false, message = $"State '{stateName}' not found in layer {layerIndex}" };
+
+            var changed = new List<string>();
+
+            if (@params["tag"] != null)
+            {
+                targetState.tag = @params["tag"].ToString();
+                changed.Add("tag");
+            }
+            if (@params["speed"] != null)
+            {
+                targetState.speed = @params["speed"].ToObject<float>();
+                changed.Add("speed");
+            }
+            if (@params["writeDefaultValues"] != null)
+            {
+                targetState.writeDefaultValues = @params["writeDefaultValues"].ToObject<bool>();
+                changed.Add("writeDefaultValues");
+            }
+            if (@params["iKOnFeet"] != null)
+            {
+                targetState.iKOnFeet = @params["iKOnFeet"].ToObject<bool>();
+                changed.Add("iKOnFeet");
+            }
+            if (@params["mirror"] != null)
+            {
+                targetState.mirror = @params["mirror"].ToObject<bool>();
+                changed.Add("mirror");
+            }
+            if (@params["cycleOffset"] != null)
+            {
+                targetState.cycleOffset = @params["cycleOffset"].ToObject<float>();
+                changed.Add("cycleOffset");
+            }
+            if (@params["speedParameter"] != null)
+            {
+                string val = @params["speedParameter"].ToString();
+                targetState.speedParameter = val;
+                targetState.speedParameterActive = !string.IsNullOrEmpty(val);
+                changed.Add("speedParameter");
+            }
+            if (@params["cycleOffsetParameter"] != null)
+            {
+                string val = @params["cycleOffsetParameter"].ToString();
+                targetState.cycleOffsetParameter = val;
+                targetState.cycleOffsetParameterActive = !string.IsNullOrEmpty(val);
+                changed.Add("cycleOffsetParameter");
+            }
+            if (@params["mirrorParameter"] != null)
+            {
+                string val = @params["mirrorParameter"].ToString();
+                targetState.mirrorParameter = val;
+                targetState.mirrorParameterActive = !string.IsNullOrEmpty(val);
+                changed.Add("mirrorParameter");
+            }
+            if (@params["timeParameter"] != null)
+            {
+                string val = @params["timeParameter"].ToString();
+                targetState.timeParameter = val;
+                targetState.timeParameterActive = !string.IsNullOrEmpty(val);
+                changed.Add("timeParameter");
+            }
+
+            if (changed.Count == 0)
+                return new { success = false, message = "No recognized state properties provided. Supported: tag, speed, writeDefaultValues, iKOnFeet, mirror, cycleOffset, speedParameter, cycleOffsetParameter, mirrorParameter, timeParameter" };
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Modified {changed.Count} property(s) on state '{stateName}': {string.Join(", ", changed)}",
+                data = new
+                {
+                    stateName,
+                    layerIndex,
+                    modifiedProperties = changed
+                }
+            };
+        }
+
+        public static object ModifyTransition(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string fromStateName = @params["fromState"]?.ToString();
+            string toStateName = @params["toState"]?.ToString();
+            if (string.IsNullOrEmpty(fromStateName) || string.IsNullOrEmpty(toStateName))
+                return new { success = false, message = "'fromState' and 'toState' are required" };
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range" };
+
+            int transitionIndex = @params["transitionIndex"]?.ToObject<int>() ?? 0;
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            bool isAnyState = string.Equals(fromStateName, "AnyState", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(fromStateName, "Any", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
+
+            // Find the target transition
+            AnimatorStateTransition transition = null;
+            if (isAnyState)
+            {
+                var matching = new List<AnimatorStateTransition>();
+                foreach (var t in rootStateMachine.anyStateTransitions)
+                {
+                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                        matching.Add(t);
+                }
+
+                if (matching.Count == 0)
+                    return new { success = false, message = $"No AnyState transition to '{toStateName}' found in layer {layerIndex}" };
+
+                if (transitionIndex < 0 || transitionIndex >= matching.Count)
+                    return new { success = false, message = $"Transition index {transitionIndex} out of range ({matching.Count} matching transitions)" };
+
+                transition = matching[transitionIndex];
+                fromStateName = "AnyState";
+            }
+            else
+            {
+                var fromState = FindState(rootStateMachine, fromStateName);
+                if (fromState == null)
+                    return new { success = false, message = $"State '{fromStateName}' not found in layer {layerIndex}" };
+
+                var matching = new List<AnimatorStateTransition>();
+                foreach (var t in fromState.transitions)
+                {
+                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                        matching.Add(t);
+                }
+
+                if (matching.Count == 0)
+                    return new { success = false, message = $"No transition from '{fromStateName}' to '{toStateName}' found in layer {layerIndex}" };
+
+                if (transitionIndex < 0 || transitionIndex >= matching.Count)
+                    return new { success = false, message = $"Transition index {transitionIndex} out of range ({matching.Count} matching transitions)" };
+
+                transition = matching[transitionIndex];
+            }
+
+            var changed = new List<string>();
+
+            if (@params["hasExitTime"] != null)
+            {
+                transition.hasExitTime = @params["hasExitTime"].ToObject<bool>();
+                changed.Add("hasExitTime");
+            }
+            if (@params["exitTime"] != null)
+            {
+                transition.exitTime = @params["exitTime"].ToObject<float>();
+                changed.Add("exitTime");
+            }
+            if (@params["duration"] != null)
+            {
+                transition.duration = @params["duration"].ToObject<float>();
+                changed.Add("duration");
+            }
+            if (@params["offset"] != null)
+            {
+                transition.offset = @params["offset"].ToObject<float>();
+                changed.Add("offset");
+            }
+            if (@params["hasFixedDuration"] != null)
+            {
+                transition.hasFixedDuration = @params["hasFixedDuration"].ToObject<bool>();
+                changed.Add("hasFixedDuration");
+            }
+            if (@params["interruptionSource"] != null)
+            {
+                string srcStr = @params["interruptionSource"].ToString().ToLowerInvariant();
+                TransitionInterruptionSource src;
+                switch (srcStr)
+                {
+                    case "none": src = TransitionInterruptionSource.None; break;
+                    case "source": src = TransitionInterruptionSource.Source; break;
+                    case "destination": src = TransitionInterruptionSource.Destination; break;
+                    case "sourcethendestination": src = TransitionInterruptionSource.SourceThenDestination; break;
+                    case "destinationthensource": src = TransitionInterruptionSource.DestinationThenSource; break;
+                    default:
+                        return new { success = false, message = $"Unknown interruptionSource '{srcStr}'. Valid: none, source, destination, sourceThenDestination, destinationThenSource" };
+                }
+                transition.interruptionSource = src;
+                changed.Add("interruptionSource");
+            }
+            if (@params["orderedInterruption"] != null)
+            {
+                transition.orderedInterruption = @params["orderedInterruption"].ToObject<bool>();
+                changed.Add("orderedInterruption");
+            }
+            if (@params["canTransitionToSelf"] != null)
+            {
+                transition.canTransitionToSelf = @params["canTransitionToSelf"].ToObject<bool>();
+                changed.Add("canTransitionToSelf");
+            }
+
+            // Handle conditions replacement
+            if (@params["conditions"] is JArray conditionsArray)
+            {
+                // Clear existing conditions by setting to empty array
+                transition.conditions = new AnimatorCondition[0];
+
+                foreach (var condItem in conditionsArray)
+                {
+                    if (condItem is not JObject condObj) continue;
+
+                    string paramName = condObj["parameter"]?.ToString();
+                    if (string.IsNullOrEmpty(paramName)) continue;
+
+                    string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
+                    float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
+
+                    AnimatorConditionMode mode;
+                    switch (modeStr)
+                    {
+                        case "greater": mode = AnimatorConditionMode.Greater; break;
+                        case "less": mode = AnimatorConditionMode.Less; break;
+                        case "equals": mode = AnimatorConditionMode.Equals; break;
+                        case "notequal":
+                        case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
+                        case "if":
+                        case "true": mode = AnimatorConditionMode.If; break;
+                        case "ifnot":
+                        case "if_not":
+                        case "false": mode = AnimatorConditionMode.IfNot; break;
+                        default: mode = AnimatorConditionMode.Greater; break;
+                    }
+
+                    transition.AddCondition(mode, threshold, paramName);
+                }
+
+                changed.Add("conditions");
+            }
+
+            if (changed.Count == 0)
+                return new { success = false, message = "No recognized transition properties provided. Supported: hasExitTime, exitTime, duration, offset, hasFixedDuration, interruptionSource, orderedInterruption, canTransitionToSelf, conditions" };
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Modified {changed.Count} property(s) on transition from '{fromStateName}' to '{toStateName}': {string.Join(", ", changed)}",
+                data = new
+                {
+                    fromState = fromStateName,
+                    toState = toStateName,
+                    layerIndex,
+                    transitionIndex,
+                    modifiedProperties = changed
                 }
             };
         }

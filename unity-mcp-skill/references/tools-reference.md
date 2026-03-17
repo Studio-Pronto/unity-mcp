@@ -1367,6 +1367,18 @@ manage_animation(action="controller_remove_parameter",
     controller_path="Assets/Animators/Player.controller",
     properties={"parameterName": "Speed"})
 
+# Modify state properties (tag, speed, writeDefaultValues, iKOnFeet, mirror, etc.)
+manage_animation(action="controller_modify_state",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Attack", "tag": "Combat", "speed": 1.5})
+
+# Modify transition properties (replaces conditions if provided)
+manage_animation(action="controller_modify_transition",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"fromState": "Idle", "toState": "Walk",
+                "hasExitTime": False, "duration": 0.1,
+                "conditions": [{"parameter": "Speed", "mode": "greater", "threshold": 0.1}]})
+
 # Create an AnimationClip
 manage_animation(action="clip_create", clip_path="Assets/Animations/Bounce.anim",
     properties={"loop": True})

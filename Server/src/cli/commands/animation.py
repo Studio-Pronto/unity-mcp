@@ -762,6 +762,106 @@ def controller_remove_parameter(controller_path: str, param_name: str):
     click.echo(format_output(result, config.format))
 
 
+@controller.command("modify-state")
+@click.argument("controller_path")
+@click.argument("state_name")
+@click.option("--tag", default=None, help="State tag.")
+@click.option("--speed", default=None, type=float, help="Playback speed.")
+@click.option("--write-default-values/--no-write-default-values", default=None, help="Write default values for uncontrolled properties.")
+@click.option("--ik-on-feet/--no-ik-on-feet", default=None, help="Enable foot IK.")
+@click.option("--mirror/--no-mirror", default=None, help="Mirror the animation.")
+@click.option("--cycle-offset", default=None, type=float, help="Cycle offset for looping clips.")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_modify_state(controller_path: str, state_name: str, tag: Optional[str], speed: Optional[float],
+                            write_default_values: Optional[bool], ik_on_feet: Optional[bool],
+                            mirror: Optional[bool], cycle_offset: Optional[float], layer_index: int):
+    """Modify properties on an existing animator state.
+
+    \b
+    Examples:
+        unity-mcp animation controller modify-state "Assets/Anim/Player.controller" "Attack" --tag "Combat"
+        unity-mcp animation controller modify-state "Assets/Anim/Player.controller" "Walk" --speed 1.5 --no-write-default-values
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_modify_state",
+        "controllerPath": controller_path,
+        "stateName": state_name,
+        "layerIndex": layer_index,
+    }
+    if tag is not None:
+        params["tag"] = tag
+    if speed is not None:
+        params["speed"] = speed
+    if write_default_values is not None:
+        params["writeDefaultValues"] = write_default_values
+    if ik_on_feet is not None:
+        params["iKOnFeet"] = ik_on_feet
+    if mirror is not None:
+        params["mirror"] = mirror
+    if cycle_offset is not None:
+        params["cycleOffset"] = cycle_offset
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("modify-transition")
+@click.argument("controller_path")
+@click.argument("from_state")
+@click.argument("to_state")
+@click.option("--has-exit-time/--no-exit-time", default=None, help="Whether transition uses exit time.")
+@click.option("--exit-time", default=None, type=float, help="Exit time (normalized).")
+@click.option("--duration", "-d", default=None, type=float, help="Transition duration.")
+@click.option("--offset", default=None, type=float, help="Start time offset in destination state.")
+@click.option("--has-fixed-duration/--no-fixed-duration", default=None, help="Duration in seconds (true) or normalized (false).")
+@click.option("--can-transition-to-self/--no-transition-to-self", default=None, help="Can transition fire to itself.")
+@click.option("--conditions", "-c", default=None, help='Conditions as JSON array (replaces existing): [{"parameter":"Speed","mode":"greater","threshold":0.1}]')
+@click.option("--transition-index", default=0, type=int, help="Index of transition to modify (when multiple exist between same states).")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_modify_transition(controller_path: str, from_state: str, to_state: str, has_exit_time: Optional[bool],
+                                 exit_time: Optional[float], duration: Optional[float], offset: Optional[float],
+                                 has_fixed_duration: Optional[bool], can_transition_to_self: Optional[bool],
+                                 conditions: Optional[str], transition_index: int, layer_index: int):
+    """Modify properties on an existing transition.
+
+    \b
+    Examples:
+        unity-mcp animation controller modify-transition "Assets/Anim/Player.controller" "Idle" "Walk" \\
+            --no-exit-time --duration 0.1
+        unity-mcp animation controller modify-transition "Assets/Anim/Player.controller" "Idle" "Walk" \\
+            --conditions '[{"parameter":"Speed","mode":"greater","threshold":0.1}]'
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_modify_transition",
+        "controllerPath": controller_path,
+        "fromState": from_state,
+        "toState": to_state,
+        "transitionIndex": transition_index,
+        "layerIndex": layer_index,
+    }
+    if has_exit_time is not None:
+        params["hasExitTime"] = has_exit_time
+    if exit_time is not None:
+        params["exitTime"] = exit_time
+    if duration is not None:
+        params["duration"] = duration
+    if offset is not None:
+        params["offset"] = offset
+    if has_fixed_duration is not None:
+        params["hasFixedDuration"] = has_fixed_duration
+    if can_transition_to_self is not None:
+        params["canTransitionToSelf"] = can_transition_to_self
+    if conditions is not None:
+        params["conditions"] = parse_json_list_or_exit(conditions, "conditions")
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
 @controller.command("info")
 @click.argument("controller_path")
 @handle_unity_errors
