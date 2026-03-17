@@ -84,10 +84,12 @@ List any overlapping files — these are likely to conflict.
 
 **Stop and wait for the user to approve before proceeding.** The user may want to discuss specific changes, defer the merge, or handle certain conflicts a particular way.
 
-### 4. Run the merge
+### 4. Run the merge (no auto-commit)
+
+Use `--no-commit` so the user can review before anything is committed:
 
 ```bash
-git merge upstream/main -m "Merge upstream CoplayDev/unity-mcp <version> into fork"
+git merge upstream/main --no-commit --no-ff
 ```
 
 Try to determine the upstream version from their `MCPForUnity/package.json` for the commit message:
@@ -104,9 +106,30 @@ If the merge produces conflicts:
    - **Configurator files** (in `MCPForUnity/Editor/Clients/Configurators/`): if it's not `ClaudeCodeConfigurator`, resolve by deleting the file (`git rm`)
    - **Version files** (`package.json`, `pyproject.toml`, `manifest.json`, `uv.lock`): accept upstream's version — the fixup step will add the fork suffix
    - **Code conflicts**: resolve intelligently by understanding both sides. Prefer keeping fork-specific enhancements while incorporating upstream changes
-3. After resolving all conflicts: `git add -A && git commit --no-edit`
+3. After resolving all conflicts: `git add -A` (do NOT commit yet)
 
-### 6. Apply fork fixups
+### 6. Review before committing
+
+**Stop and present the merge result to the user.** Show:
+
+```bash
+git diff --cached --stat               # summary of all staged changes
+git diff --cached                      # full diff (or offer to show specific files)
+```
+
+Highlight anything noteworthy:
+- Conflicts that were resolved and how
+- Files that were deleted (configurators, etc.)
+- Any fork-specific code that was modified by the merge
+
+**Wait for the user to approve before committing.** If they want changes, make them and re-present.
+
+Once approved:
+```bash
+git commit -m "Merge upstream CoplayDev/unity-mcp <version> into fork"
+```
+
+### 7. Apply fork fixups
 
 Run the post-merge fixup script:
 
@@ -120,7 +143,7 @@ This will:
 - Regenerate `uv.lock`
 - Commit the fixups
 
-### 7. Verify
+### 8. Verify
 
 After the merge and fixups:
 
@@ -129,7 +152,7 @@ git log --oneline -5                    # show recent history
 ls MCPForUnity/Editor/Clients/Configurators/  # should only have ClaudeCodeConfigurator*
 ```
 
-### 8. Report results
+### 9. Report results
 
 Summarize:
 - How many upstream commits were merged

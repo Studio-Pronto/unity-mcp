@@ -14,7 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/session-set-tab-name.sh",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/session-set-tab-name.sh",
             "timeout": 5
           }
         ]
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/notify-stop.sh",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/notify-stop.sh",
             "timeout": 10
           }
         ]
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/notify-attention.sh",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/notify-attention.sh",
             "timeout": 10
           }
         ]
