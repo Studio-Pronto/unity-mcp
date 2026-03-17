@@ -159,7 +159,7 @@ uri="file:///full/path/to/file.cs"
 | **Objects** | `manage_gameobject`, `manage_components` | Creating/modifying GameObjects |
 | **Scripts** | `create_script`, `script_apply_edits`, `refresh_unity` | C# code management |
 | **Assets** | `manage_asset`, `manage_prefabs` | Asset operations, model import settings (FBX/OBJ), material remapping |
-| **Animation** | `manage_animation` | Animator control, AnimatorController CRUD (states, transitions, blend trees), AnimationClip creation |
+| **Animation** | `manage_animation` | Animator control, AnimatorController CRUD (create/modify/remove states, transitions, parameters, blend trees), AnimationClip creation |
 | **Editor** | `manage_editor`, `execute_menu_item`, `read_console` | Editor control, package deployment (`deploy_package`/`restore_package` actions) |
 | **Testing** | `run_tests`, `get_test_job` | Unity Test Framework |
 | **Batch** | `batch_execute` | Parallel/bulk operations |

@@ -68,7 +68,7 @@ namespace MCPForUnity.Editor.Tools.GameObjects
             }
 
             EditorUtility.SetDirty(duplicatedGo);
-            GameObjectLookup.MarkSceneOrPrefabDirty(duplicatedGo);
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 
             Selection.activeGameObject = duplicatedGo;
 

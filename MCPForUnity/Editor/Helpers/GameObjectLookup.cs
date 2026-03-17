@@ -10,9 +10,8 @@ using UnityEngine.SceneManagement;
 namespace MCPForUnity.Editor.Helpers
 {
     /// <summary>
-    /// Utility class for finding and looking up GameObjects in the scene or Prefab Stage.
+    /// Utility class for finding and looking up GameObjects in the scene.
     /// Provides search functionality by name, tag, layer, component, path, and instance ID.
-    /// When a prefab is open in isolation mode (Prefab Stage), searches within the prefab.
     /// </summary>
     public static class GameObjectLookup
     {
@@ -285,7 +284,7 @@ namespace MCPForUnity.Editor.Helpers
         }
 
         /// <summary>
-        /// Gets all GameObjects in the current context (Prefab Stage if open, otherwise active scene).
+        /// Gets all GameObjects in the current scene.
         /// </summary>
         public static IEnumerable<GameObject> GetAllSceneObjects(bool includeInactive)
         {
@@ -313,45 +312,6 @@ namespace MCPForUnity.Editor.Helpers
                 {
                     yield return go;
                 }
-            }
-        }
-
-        /// <summary>
-        /// Checks if we're currently editing a prefab in isolation mode.
-        /// </summary>
-        public static bool IsInPrefabStage()
-        {
-            return PrefabStageUtility.GetCurrentPrefabStage() != null;
-        }
-
-        /// <summary>
-        /// Gets the root GameObject of the current Prefab Stage, or null if not in a Prefab Stage.
-        /// </summary>
-        public static GameObject GetPrefabStageRoot()
-        {
-            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-            return prefabStage?.prefabContentsRoot;
-        }
-
-        /// <summary>
-        /// Marks the appropriate scene as dirty (Prefab Stage scene or regular scene).
-        /// Use this after modifying GameObjects to ensure changes are saved.
-        /// </summary>
-        public static void MarkSceneOrPrefabDirty(GameObject modifiedObject)
-        {
-            if (modifiedObject == null)
-                return;
-
-            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-            if (prefabStage != null)
-            {
-                // Mark the prefab stage scene as dirty
-                EditorSceneManager.MarkSceneDirty(prefabStage.scene);
-            }
-            else
-            {
-                // Mark the regular scene as dirty
-                EditorSceneManager.MarkSceneDirty(modifiedObject.scene);
             }
         }
 

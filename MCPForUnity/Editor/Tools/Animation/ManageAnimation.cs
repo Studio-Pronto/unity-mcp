@@ -42,6 +42,7 @@ namespace MCPForUnity.Editor.Tools.Animation
             { "child_blend_parameter", "childBlendParameter" },
             { "child_blend_parameter_x", "childBlendParameterX" },
             { "child_blend_parameter_y", "childBlendParameterY" },
+            { "transition_index", "transitionIndex" },
         };
 
         private static JObject NormalizeParams(JObject source)
@@ -233,8 +234,12 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "create_blend_tree_2d": return ControllerBlendTrees.CreateBlendTree2D(@params);
                 case "add_blend_tree_child": return ControllerBlendTrees.AddBlendTreeChild(@params);
                 case "add_blend_tree_child_tree": return ControllerBlendTrees.AddBlendTreeChildTree(@params);
+                case "set_state_motion": return ControllerCreate.SetStateMotion(@params);
+                case "remove_state": return ControllerCreate.RemoveState(@params);
+                case "remove_transition": return ControllerCreate.RemoveTransition(@params);
+                case "remove_parameter": return ControllerCreate.RemoveParameter(@params);
                 default:
-                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree" };
+                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree" };
             }
         }
 

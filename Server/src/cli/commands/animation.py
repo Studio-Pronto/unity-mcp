@@ -656,6 +656,112 @@ def controller_add_parameter(controller_path: str, param_name: str, param_type: 
     click.echo(format_output(result, config.format))
 
 
+@controller.command("set-state-motion")
+@click.argument("controller_path")
+@click.argument("state_name")
+@click.option("--clip-path", default=None, help="Motion asset path (AnimationClip or BlendTree). Omit to clear motion.")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_set_state_motion(controller_path: str, state_name: str, clip_path: Optional[str], layer_index: int):
+    """Set or clear the motion on an existing animator state.
+
+    \b
+    Examples:
+        unity-mcp animation controller set-state-motion "Assets/Anim/Player.controller" "Walk" \\
+            --clip-path "Assets/Anim/Walk.anim"
+        unity-mcp animation controller set-state-motion "Assets/Anim/Player.controller" "Idle"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_set_state_motion",
+        "controllerPath": controller_path,
+        "stateName": state_name,
+        "layerIndex": layer_index,
+    }
+    if clip_path:
+        params["clipPath"] = clip_path
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("remove-state")
+@click.argument("controller_path")
+@click.argument("state_name")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_remove_state(controller_path: str, state_name: str, layer_index: int):
+    """Remove a state from an AnimatorController.
+
+    \b
+    Examples:
+        unity-mcp animation controller remove-state "Assets/Anim/Player.controller" "Walk"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_remove_state",
+        "controllerPath": controller_path,
+        "stateName": state_name,
+        "layerIndex": layer_index,
+    }
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("remove-transition")
+@click.argument("controller_path")
+@click.argument("from_state")
+@click.argument("to_state")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@click.option("--transition-index", default=None, type=int, help="Index of specific transition to remove (removes all matching if omitted).")
+@handle_unity_errors
+def controller_remove_transition(controller_path: str, from_state: str, to_state: str, layer_index: int, transition_index: Optional[int]):
+    """Remove transition(s) between states in an AnimatorController.
+
+    \b
+    Examples:
+        unity-mcp animation controller remove-transition "Assets/Anim/Player.controller" "Idle" "Walk"
+        unity-mcp animation controller remove-transition "Assets/Anim/Player.controller" "AnyState" "Death"
+        unity-mcp animation controller remove-transition "Assets/Anim/Player.controller" "Idle" "Walk" --transition-index 0
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_remove_transition",
+        "controllerPath": controller_path,
+        "fromState": from_state,
+        "toState": to_state,
+        "layerIndex": layer_index,
+    }
+    if transition_index is not None:
+        params["transitionIndex"] = transition_index
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("remove-parameter")
+@click.argument("controller_path")
+@click.argument("param_name")
+@handle_unity_errors
+def controller_remove_parameter(controller_path: str, param_name: str):
+    """Remove a parameter from an AnimatorController.
+
+    \b
+    Examples:
+        unity-mcp animation controller remove-parameter "Assets/Anim/Player.controller" "Speed"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_remove_parameter",
+        "controllerPath": controller_path,
+        "parameterName": param_name,
+    }
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
 @controller.command("info")
 @click.argument("controller_path")
 @handle_unity_errors

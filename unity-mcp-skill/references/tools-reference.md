@@ -1341,6 +1341,32 @@ manage_animation(action="controller_add_blend_tree_child",
     clip_path="Assets/Animations/WalkLeft.anim",
     properties={"stateName": "Locomotion/WalkBlend", "threshold": -1.0})
 
+# Set/change motion on an existing state
+manage_animation(action="controller_set_state_motion",
+    controller_path="Assets/Animators/Player.controller",
+    clip_path="Assets/Animations/Walk.anim",
+    properties={"stateName": "Walk"})
+
+# Clear motion from a state (omit clip_path)
+manage_animation(action="controller_set_state_motion",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Walk"})
+
+# Remove a state
+manage_animation(action="controller_remove_state",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"stateName": "Walk"})
+
+# Remove transition(s) between states
+manage_animation(action="controller_remove_transition",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"fromState": "Idle", "toState": "Walk"})
+
+# Remove a parameter
+manage_animation(action="controller_remove_parameter",
+    controller_path="Assets/Animators/Player.controller",
+    properties={"parameterName": "Speed"})
+
 # Create an AnimationClip
 manage_animation(action="clip_create", clip_path="Assets/Animations/Bounce.anim",
     properties={"loop": True})

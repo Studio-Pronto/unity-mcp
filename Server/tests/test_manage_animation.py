@@ -75,6 +75,8 @@ class TestActionLists:
     def test_expected_controller_actions_present(self):
         expected = {"controller_create", "controller_add_state", "controller_add_transition",
                     "controller_add_parameter", "controller_get_info", "controller_assign",
+                    "controller_set_state_motion", "controller_remove_state",
+                    "controller_remove_transition", "controller_remove_parameter",
                     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
                     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
                     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree"}
@@ -458,6 +460,80 @@ class TestControllerCLICommands:
 
                 params = _get_params(mock_run)
                 assert params["searchMethod"] == "by_name"
+
+    def test_controller_set_state_motion_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "set-state-motion", "Assets/Anim/Player.controller", "Walk",
+                    "--clip-path", "Assets/Anim/Walk.anim",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_set_state_motion"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["clipPath"] == "Assets/Anim/Walk.anim"
+                assert params["properties"]["stateName"] == "Walk"
+
+    def test_controller_set_state_motion_clear_motion(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "set-state-motion", "Assets/Anim/Player.controller", "Walk",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_set_state_motion"
+                assert "clipPath" not in params
+
+    def test_controller_remove_state_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-state", "Assets/Anim/Player.controller", "Walk",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_remove_state"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["stateName"] == "Walk"
+
+    def test_controller_remove_transition_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-transition", "Assets/Anim/Player.controller",
+                    "Idle", "Walk",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_remove_transition"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["fromState"] == "Idle"
+                assert params["properties"]["toState"] == "Walk"
+
+    def test_controller_remove_transition_with_index(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-transition", "Assets/Anim/Player.controller",
+                    "Idle", "Walk", "--transition-index", "0",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["properties"]["transitionIndex"] == 0
+
+    def test_controller_remove_parameter_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-parameter", "Assets/Anim/Player.controller", "Speed",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_remove_parameter"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["parameterName"] == "Speed"
 
 
 # =============================================================================

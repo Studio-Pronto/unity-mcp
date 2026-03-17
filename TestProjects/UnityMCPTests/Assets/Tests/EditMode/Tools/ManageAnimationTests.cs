@@ -895,6 +895,404 @@ namespace MCPForUnityTests.Editor.Tools
         }
 
         // =============================================================================
+        // Controller: Set State Motion
+        // =============================================================================
+
+        [Test]
+        public void ControllerSetStateMotion_SetsClip()
+        {
+            string controllerPath = $"{TempRoot}/SetMotionController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.layers[0].stateMachine.AddState("Walk");
+            AssetDatabase.SaveAssets();
+
+            string clipPath = $"{TempRoot}/WalkClip_{Guid.NewGuid():N}.anim";
+            var clip = new AnimationClip { name = "WalkClip" };
+            AssetDatabase.CreateAsset(clip, clipPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_set_state_motion",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk",
+                ["clipPath"] = clipPath
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var state = controller.layers[0].stateMachine.states.First(s => s.state.name == "Walk").state;
+            Assert.IsNotNull(state.motion, "State should have motion assigned");
+        }
+
+        [Test]
+        public void ControllerSetStateMotion_ClearsMotion()
+        {
+            string controllerPath = $"{TempRoot}/ClearMotionController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var state = controller.layers[0].stateMachine.AddState("Walk");
+
+            string clipPath = $"{TempRoot}/ClearClip_{Guid.NewGuid():N}.anim";
+            var clip = new AnimationClip { name = "ClearClip" };
+            AssetDatabase.CreateAsset(clip, clipPath);
+            state.motion = clip;
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_set_state_motion",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            state = controller.layers[0].stateMachine.states.First(s => s.state.name == "Walk").state;
+            Assert.IsNull(state.motion, "State motion should be cleared");
+        }
+
+        [Test]
+        public void ControllerSetStateMotion_ReplacesExistingMotion()
+        {
+            string controllerPath = $"{TempRoot}/ReplaceMotionController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var state = controller.layers[0].stateMachine.AddState("Walk");
+
+            string clipPath1 = $"{TempRoot}/OldClip_{Guid.NewGuid():N}.anim";
+            var clip1 = new AnimationClip { name = "OldClip" };
+            AssetDatabase.CreateAsset(clip1, clipPath1);
+            state.motion = clip1;
+
+            string clipPath2 = $"{TempRoot}/NewClip_{Guid.NewGuid():N}.anim";
+            var clip2 = new AnimationClip { name = "NewClip" };
+            AssetDatabase.CreateAsset(clip2, clipPath2);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_set_state_motion",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk",
+                ["clipPath"] = clipPath2
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            state = controller.layers[0].stateMachine.states.First(s => s.state.name == "Walk").state;
+            Assert.AreEqual("NewClip", state.motion.name);
+        }
+
+        [Test]
+        public void ControllerSetStateMotion_StateNotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/SetMotionNotFound_{Guid.NewGuid():N}.controller";
+            AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_set_state_motion",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "NonExistent"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("not found"));
+        }
+
+        [Test]
+        public void ControllerSetStateMotion_ClipNotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/SetMotionBadClip_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.layers[0].stateMachine.AddState("Walk");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_set_state_motion",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk",
+                ["clipPath"] = "Assets/NonExistent/Fake.anim"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("Motion not found"));
+        }
+
+        // =============================================================================
+        // Controller: Remove State
+        // =============================================================================
+
+        [Test]
+        public void ControllerRemoveState_RemovesState()
+        {
+            string controllerPath = $"{TempRoot}/RemoveStateController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            sm.AddState("Idle");
+            sm.AddState("Walk");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_state",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var states = controller.layers[0].stateMachine.states;
+            Assert.IsFalse(states.Any(s => s.state.name == "Walk"), "Walk should be removed");
+            Assert.IsTrue(states.Any(s => s.state.name == "Idle"), "Idle should remain");
+        }
+
+        [Test]
+        public void ControllerRemoveState_StateNotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveStateNotFound_{Guid.NewGuid():N}.controller";
+            AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_state",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "NonExistent"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("not found"));
+        }
+
+        [Test]
+        public void ControllerRemoveState_WithTransitions_CleansUp()
+        {
+            string controllerPath = $"{TempRoot}/RemoveStateTransitions_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            var walk = sm.AddState("Walk");
+            idle.AddTransition(walk);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_state",
+                ["controllerPath"] = controllerPath,
+                ["stateName"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(0, idleState.transitions.Length, "Transitions to removed state should be cleaned up");
+        }
+
+        [Test]
+        public void ControllerRemoveState_MissingName_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveStateMissing_{Guid.NewGuid():N}.controller";
+            AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_state",
+                ["controllerPath"] = controllerPath
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("stateName"));
+        }
+
+        // =============================================================================
+        // Controller: Remove Transition
+        // =============================================================================
+
+        [Test]
+        public void ControllerRemoveTransition_RemovesTransition()
+        {
+            string controllerPath = $"{TempRoot}/RemoveTransController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            var walk = sm.AddState("Walk");
+            idle.AddTransition(walk);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(0, idleState.transitions.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_AnyState_RemovesTransition()
+        {
+            string controllerPath = $"{TempRoot}/RemoveAnyTrans_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var walk = sm.AddState("Walk");
+            sm.AddAnyStateTransition(walk);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "AnyState",
+                ["toState"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            Assert.AreEqual(0, controller.layers[0].stateMachine.anyStateTransitions.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_MultipleTransitions_RemovesAll()
+        {
+            string controllerPath = $"{TempRoot}/RemoveMultiTrans_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            var walk = sm.AddState("Walk");
+            idle.AddTransition(walk);
+            idle.AddTransition(walk);
+            AssetDatabase.SaveAssets();
+
+            Assert.AreEqual(2, idle.transitions.Length, "Should have 2 transitions before removal");
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Walk"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+            Assert.AreEqual(2, result["data"]["removedCount"].Value<int>());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(0, idleState.transitions.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_WithIndex_RemovesSpecific()
+        {
+            string controllerPath = $"{TempRoot}/RemoveIndexTrans_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            var walk = sm.AddState("Walk");
+            idle.AddTransition(walk);
+            idle.AddTransition(walk);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Walk",
+                ["transitionIndex"] = 0
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+            Assert.AreEqual(1, result["data"]["removedCount"].Value<int>());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(1, idleState.transitions.Length, "Should have 1 transition remaining");
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_NotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveTransNotFound_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            sm.AddState("Idle");
+            sm.AddState("Walk");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Walk"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("No transition"));
+        }
+
+        // =============================================================================
+        // Controller: Remove Parameter
+        // =============================================================================
+
+        [Test]
+        public void ControllerRemoveParameter_RemovesParameter()
+        {
+            string controllerPath = $"{TempRoot}/RemoveParamController_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            AssetDatabase.SaveAssets();
+
+            Assert.AreEqual(1, controller.parameters.Length);
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_parameter",
+                ["controllerPath"] = controllerPath,
+                ["parameterName"] = "Speed"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            Assert.AreEqual(0, controller.parameters.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveParameter_NotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveParamNotFound_{Guid.NewGuid():N}.controller";
+            AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_parameter",
+                ["controllerPath"] = controllerPath,
+                ["parameterName"] = "NonExistent"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("not found"));
+        }
+
+        [Test]
+        public void ControllerRemoveParameter_MissingName_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveParamMissing_{Guid.NewGuid():N}.controller";
+            AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_parameter",
+                ["controllerPath"] = controllerPath
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("parameterName"));
+        }
+
+        // =============================================================================
         // Clip: Set Vector Curve
         // =============================================================================
 
