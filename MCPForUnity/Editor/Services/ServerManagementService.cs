@@ -233,32 +233,14 @@ namespace MCPForUnity.Editor.Services
         /// Start the local HTTP server in a separate terminal window.
         /// Stops any existing server on the port and clears the uvx cache first.
         /// </summary>
-        public bool StartLocalHttpServer()
-        {
-            return StartLocalHttpServerInternal(silent: false);
-        }
-
-        /// <summary>
-        /// Start the local HTTP server silently (no confirmation or error dialogs).
-        /// Used for auto-start scenarios where user interaction is not appropriate.
-        /// </summary>
-        public bool StartLocalHttpServerSilent()
-        {
-            return StartLocalHttpServerInternal(silent: true);
-        }
-
-        private bool StartLocalHttpServerInternal(bool silent)
+        public bool StartLocalHttpServer(bool quiet = false)
         {
             /// Clean stale Python build artifacts when using a local dev server path
             AssetPathUtility.CleanLocalServerBuildArtifacts();
 
             if (!TryGetLocalHttpServerCommandParts(out _, out _, out var displayCommand, out var error))
             {
-                if (silent)
-                {
-                    McpLog.Warn($"[HttpAutoStart] Cannot start HTTP server: {error ?? "command could not be constructed"}");
-                }
-                else
+                if (!quiet)
                 {
                     EditorUtility.DisplayDialog(
                         "Cannot Start HTTP Server",
@@ -280,11 +262,7 @@ namespace MCPForUnity.Editor.Services
                     var remaining = GetListeningProcessIdsForPort(uri.Port);
                     if (remaining.Count > 0)
                     {
-                        if (silent)
-                        {
-                            McpLog.Warn($"[HttpAutoStart] Cannot start server: port {uri.Port} already in use by PID(s): {string.Join(", ", remaining)}");
-                        }
-                        else
+                        if (!quiet)
                         {
                             EditorUtility.DisplayDialog(
                                 "Port In Use",
@@ -314,18 +292,14 @@ namespace MCPForUnity.Editor.Services
                 launchCommand = $"{displayCommand} --pidfile {QuoteIfNeeded(pidFilePath)} --unity-instance-token {instanceToken}";
             }
 
-            // In silent mode, skip the confirmation dialog and proceed directly.
-            if (!silent)
+            if (!quiet && !EditorUtility.DisplayDialog(
+                "Start Local HTTP Server",
+                $"This will start the MCP server in HTTP mode in a new terminal window:\n\n{launchCommand}\n\n" +
+                "Continue?",
+                "Start Server",
+                "Cancel"))
             {
-                if (!EditorUtility.DisplayDialog(
-                    "Start Local HTTP Server",
-                    $"This will start the MCP server in HTTP mode in a new terminal window:\n\n{launchCommand}\n\n" +
-                    "Continue?",
-                    "Start Server",
-                    "Cancel"))
-                {
-                    return false;
-                }
+                return false;
             }
 
             try
@@ -356,7 +330,7 @@ namespace MCPForUnity.Editor.Services
             catch (Exception ex)
             {
                 McpLog.Error($"Failed to start server: {ex.Message}");
-                if (!silent)
+                if (!quiet)
                 {
                     EditorUtility.DisplayDialog(
                         "Error",

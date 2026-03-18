@@ -15,8 +15,9 @@ namespace MCPForUnity.Editor.Services
         /// Start the local HTTP server in a new terminal window.
         /// Stops any existing server on the port and clears the uvx cache first.
         /// </summary>
+        /// <param name="quiet">When true, skip confirmation dialogs (used by auto-start).</param>
         /// <returns>True if server was started successfully, false otherwise</returns>
-        bool StartLocalHttpServer();
+        bool StartLocalHttpServer(bool quiet = false);
 
         /// <summary>
         /// Stop the local HTTP server by finding the process listening on the configured port
@@ -60,12 +61,5 @@ namespace MCPForUnity.Editor.Services
         /// </summary>
         /// <returns>True if HTTP transport is enabled and URL satisfies local launch security policy</returns>
         bool CanStartLocalServer();
-
-        /// <summary>
-        /// Start the local HTTP server silently (no confirmation or error dialogs).
-        /// Used for auto-start scenarios where user interaction is not appropriate.
-        /// </summary>
-        /// <returns>True if server launch was initiated, false otherwise</returns>
-        bool StartLocalHttpServerSilent();
     }
 }
