@@ -1114,6 +1114,13 @@ manage_graphics(action="feature_list")
 manage_graphics(action="feature_add", feature_type="FullScreenPassRendererFeature",
     name="NightVision", material="Assets/Materials/NightVision.mat")
 
+# Configure a renderer feature's properties
+manage_graphics(action="feature_configure", name="DecalRendererFeature",
+    properties={"m_Settings.decalLayers": True})
+
+# Remove a renderer feature by name
+manage_graphics(action="feature_remove", name="ScreenSpaceAmbientOcclusion")
+
 # Toggle a feature off
 manage_graphics(action="feature_toggle", index=0, active=False)
 
