@@ -23,7 +23,9 @@ namespace MCPForUnity.Editor.Tools.Prefabs
         private const string ACTION_GET_INFO = "get_info";
         private const string ACTION_GET_HIERARCHY = "get_hierarchy";
         private const string ACTION_MODIFY_CONTENTS = "modify_contents";
-        private const string SupportedActions = ACTION_CREATE_FROM_GAMEOBJECT + ", " + ACTION_GET_INFO + ", " + ACTION_GET_HIERARCHY + ", " + ACTION_MODIFY_CONTENTS;
+        private const string ACTION_GET_OVERRIDES = "get_overrides";
+        private const string ACTION_REVERT_OVERRIDES = "revert_overrides";
+        private const string SupportedActions = ACTION_CREATE_FROM_GAMEOBJECT + ", " + ACTION_GET_INFO + ", " + ACTION_GET_HIERARCHY + ", " + ACTION_MODIFY_CONTENTS + ", " + ACTION_GET_OVERRIDES + ", " + ACTION_REVERT_OVERRIDES;
 
         public static object HandleCommand(JObject @params)
         {
@@ -50,6 +52,10 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                         return GetHierarchy(@params);
                     case ACTION_MODIFY_CONTENTS:
                         return ModifyContents(@params);
+                    case ACTION_GET_OVERRIDES:
+                        return GetOverrides(@params);
+                    case ACTION_REVERT_OVERRIDES:
+                        return RevertOverrides(@params);
                     default:
                         return new ErrorResponse($"Unknown action: '{action}'. Valid actions are: {SupportedActions}.");
                 }
@@ -1167,6 +1173,442 @@ namespace MCPForUnity.Editor.Tools.Prefabs
             foreach (Transform child in transform)
             {
                 BuildHierarchyItemsRecursive(child, mainPrefabRoot, mainPrefabPath, path, items);
+            }
+        }
+
+        #endregion
+
+        #region Override Management
+
+        private static object ValidateVariantPath(JObject @params, string actionName, out string sanitizedPath, out GameObject prefabAsset)
+        {
+            prefabAsset = null;
+            string prefabPath = @params["prefabPath"]?.ToString() ?? @params["path"]?.ToString();
+            if (string.IsNullOrEmpty(prefabPath))
+            {
+                sanitizedPath = null;
+                return new ErrorResponse($"'prefabPath' parameter is required for {actionName}.");
+            }
+
+            sanitizedPath = AssetPathUtility.SanitizeAssetPath(prefabPath);
+            if (string.IsNullOrEmpty(sanitizedPath))
+                return new ErrorResponse($"Invalid prefab path: '{prefabPath}'.");
+
+            prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(sanitizedPath);
+            if (prefabAsset == null)
+                return new ErrorResponse($"No prefab asset found at path '{sanitizedPath}'.");
+
+            if (PrefabUtility.GetPrefabAssetType(prefabAsset) != PrefabAssetType.Variant)
+                return new ErrorResponse($"Prefab at '{sanitizedPath}' is not a variant. Only variants have overrides relative to a base prefab.");
+
+            return null;
+        }
+
+        private static string GetObjectPath(Transform obj, Transform root)
+        {
+            if (obj == root) return "";
+            var parts = new List<string>();
+            Transform current = obj;
+            while (current != null && current != root)
+            {
+                parts.Add(current.name);
+                current = current.parent;
+            }
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
+        private static HashSet<int> GetDescendantInstanceIDs(GameObject obj)
+        {
+            var ids = new HashSet<int>();
+            foreach (var t in obj.GetComponentsInChildren<Transform>(true))
+            {
+                ids.Add(t.gameObject.GetInstanceID());
+                foreach (var c in t.gameObject.GetComponents<Component>())
+                {
+                    if (c != null) ids.Add(c.GetInstanceID());
+                }
+            }
+            return ids;
+        }
+
+        private static object GetOverrides(JObject @params)
+        {
+            var error = ValidateVariantPath(@params, "get_overrides", out string sanitizedPath, out GameObject prefabAsset);
+            if (error != null) return error;
+
+            GameObject prefabContents = PrefabUtility.LoadPrefabContents(sanitizedPath);
+            if (prefabContents == null)
+                return new ErrorResponse($"Failed to load prefab contents from '{sanitizedPath}'.");
+
+            try
+            {
+                string targetName = @params["target"]?.ToString();
+                GameObject filterObj = null;
+                HashSet<int> filterIDs = null;
+
+                if (!string.IsNullOrEmpty(targetName))
+                {
+                    filterObj = FindInPrefabContents(prefabContents, targetName);
+                    if (filterObj == null)
+                        return new ErrorResponse($"Target '{targetName}' not found in prefab '{sanitizedPath}'.");
+                    filterIDs = GetDescendantInstanceIDs(filterObj);
+                }
+
+                // Property modifications
+                var allMods = PrefabUtility.GetPropertyModifications(prefabContents) ?? Array.Empty<PropertyModification>();
+                var propMods = new List<object>();
+                foreach (var mod in allMods)
+                {
+                    if (mod.target == null) continue;
+                    // Skip internal bookkeeping properties
+                    if (mod.propertyPath == "m_RootOrder" || mod.propertyPath == "m_Father") continue;
+
+                    if (filterIDs != null && !filterIDs.Contains(mod.target.GetInstanceID())) continue;
+
+                    string targetType = mod.target.GetType().Name;
+                    string objName = mod.target is Component c ? c.gameObject.name : mod.target.name;
+                    string objPath = "";
+                    if (mod.target is Component comp)
+                        objPath = GetObjectPath(comp.transform, prefabContents.transform);
+                    else if (mod.target is GameObject go)
+                        objPath = GetObjectPath(go.transform, prefabContents.transform);
+
+                    propMods.Add(new
+                    {
+                        targetName = objName,
+                        targetType = targetType,
+                        propertyPath = mod.propertyPath,
+                        value = mod.value,
+                        objectPath = objPath
+                    });
+                }
+
+                // Added components
+                var addedComps = PrefabUtility.GetAddedComponents(prefabContents);
+                var addedCompList = new List<object>();
+                foreach (var ac in addedComps)
+                {
+                    if (ac.instanceComponent == null) continue;
+                    var go = ac.instanceComponent.gameObject;
+                    if (filterIDs != null && !filterIDs.Contains(go.GetInstanceID())) continue;
+                    addedCompList.Add(new
+                    {
+                        componentType = ac.instanceComponent.GetType().Name,
+                        objectName = go.name,
+                        objectPath = GetObjectPath(go.transform, prefabContents.transform)
+                    });
+                }
+
+                // Removed components
+                var removedComps = PrefabUtility.GetRemovedComponents(prefabContents);
+                var removedCompList = new List<object>();
+                foreach (var rc in removedComps)
+                {
+                    if (rc.assetComponent == null) continue;
+                    var containingObj = rc.containingInstanceGameObject;
+                    if (filterIDs != null && containingObj != null && !filterIDs.Contains(containingObj.GetInstanceID())) continue;
+                    removedCompList.Add(new
+                    {
+                        componentType = rc.assetComponent.GetType().Name,
+                        objectName = containingObj != null ? containingObj.name : "unknown",
+                        objectPath = containingObj != null ? GetObjectPath(containingObj.transform, prefabContents.transform) : ""
+                    });
+                }
+
+                // Added GameObjects
+                var addedGOs = PrefabUtility.GetAddedGameObjects(prefabContents);
+                var addedGOList = new List<object>();
+                foreach (var ag in addedGOs)
+                {
+                    if (ag.instanceGameObject == null) continue;
+                    var addedGo = ag.instanceGameObject;
+                    if (filterObj != null && !addedGo.transform.IsChildOf(filterObj.transform) && addedGo != filterObj) continue;
+                    addedGOList.Add(new
+                    {
+                        name = addedGo.name,
+                        parentPath = addedGo.transform.parent != null
+                            ? GetObjectPath(addedGo.transform.parent, prefabContents.transform)
+                            : ""
+                    });
+                }
+
+                var (_, parentPrefab, _) = PrefabUtilityHelper.GetVariantInfo(prefabAsset);
+
+                int total = propMods.Count + addedCompList.Count + removedCompList.Count + addedGOList.Count;
+
+                return new SuccessResponse(
+                    $"Found {total} override(s) on variant '{Path.GetFileName(sanitizedPath)}'.",
+                    new
+                    {
+                        prefabPath = sanitizedPath,
+                        basePrefabPath = parentPrefab ?? "",
+                        summary = new
+                        {
+                            propertyModifications = propMods.Count,
+                            addedComponents = addedCompList.Count,
+                            removedComponents = removedCompList.Count,
+                            addedGameObjects = addedGOList.Count
+                        },
+                        propertyModifications = propMods,
+                        addedComponents = addedCompList,
+                        removedComponents = removedCompList,
+                        addedGameObjects = addedGOList
+                    }
+                );
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefabContents);
+            }
+        }
+
+        private static object RevertOverrides(JObject @params)
+        {
+            var error = ValidateVariantPath(@params, "revert_overrides", out string sanitizedPath, out _);
+            if (error != null) return error;
+
+            string revertScope = @params["revertScope"]?.ToString()?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(revertScope))
+                return new ErrorResponse("'revertScope' parameter is required for revert_overrides. Valid values: all, property, component, object, added_component, removed_component, added_gameobject.");
+
+            string targetName = @params["target"]?.ToString();
+            string componentType = @params["componentType"]?.ToString();
+            string propertyPath = @params["propertyPath"]?.ToString();
+
+            GameObject prefabContents = PrefabUtility.LoadPrefabContents(sanitizedPath);
+            if (prefabContents == null)
+                return new ErrorResponse($"Failed to load prefab contents from '{sanitizedPath}'.");
+
+            try
+            {
+                int revertedPropertyMods = 0;
+                int revertedObjectOverrides = 0;
+                int revertedAddedComps = 0;
+                int revertedRemovedComps = 0;
+                int revertedAddedGOs = 0;
+
+                switch (revertScope)
+                {
+                    case "all":
+                    {
+                        // Revert added GameObjects first
+                        var addedGOs = PrefabUtility.GetAddedGameObjects(prefabContents);
+                        foreach (var ag in addedGOs) { ag.Revert(); revertedAddedGOs++; }
+
+                        // Revert added components
+                        var addedComps = PrefabUtility.GetAddedComponents(prefabContents);
+                        foreach (var ac in addedComps) { ac.Revert(); revertedAddedComps++; }
+
+                        // Revert removed components
+                        var removedComps = PrefabUtility.GetRemovedComponents(prefabContents);
+                        foreach (var rc in removedComps) { rc.Revert(); revertedRemovedComps++; }
+
+                        // Revert object overrides (covers property modifications on each object)
+                        var objOverrides = PrefabUtility.GetObjectOverrides(prefabContents, false);
+                        foreach (var oo in objOverrides) { oo.Revert(); revertedObjectOverrides++; }
+
+                        break;
+                    }
+
+                    case "property":
+                    {
+                        if (string.IsNullOrEmpty(propertyPath))
+                            return new ErrorResponse("'propertyPath' is required when revertScope is 'property'.");
+
+                        var mods = PrefabUtility.GetPropertyModifications(prefabContents);
+                        if (mods == null) break;
+
+                        var kept = new List<PropertyModification>();
+                        foreach (var mod in mods)
+                        {
+                            bool matches = mod.propertyPath == propertyPath;
+                            if (matches && !string.IsNullOrEmpty(componentType) && mod.target != null)
+                                matches = mod.target.GetType().Name == componentType;
+                            if (matches && !string.IsNullOrEmpty(targetName) && mod.target is Component tc)
+                                matches = tc.gameObject.name == targetName;
+
+                            if (matches)
+                                revertedPropertyMods++;
+                            else
+                                kept.Add(mod);
+                        }
+                        PrefabUtility.SetPropertyModifications(prefabContents, kept.ToArray());
+                        break;
+                    }
+
+                    case "component":
+                    {
+                        if (string.IsNullOrEmpty(componentType))
+                            return new ErrorResponse("'componentType' is required when revertScope is 'component'.");
+
+                        var mods = PrefabUtility.GetPropertyModifications(prefabContents);
+                        if (mods != null)
+                        {
+                            var kept = new List<PropertyModification>();
+                            foreach (var mod in mods)
+                            {
+                                bool matches = mod.target != null && mod.target.GetType().Name == componentType;
+                                if (matches && !string.IsNullOrEmpty(targetName) && mod.target is Component tc)
+                                    matches = tc.gameObject.name == targetName;
+
+                                if (matches)
+                                    revertedPropertyMods++;
+                                else
+                                    kept.Add(mod);
+                            }
+                            PrefabUtility.SetPropertyModifications(prefabContents, kept.ToArray());
+                        }
+
+                        // Also revert object overrides on matching components
+                        var objOverrides = PrefabUtility.GetObjectOverrides(prefabContents, false);
+                        foreach (var oo in objOverrides)
+                        {
+                            var obj = oo.instanceObject;
+                            if (obj != null && obj.GetType().Name == componentType)
+                            {
+                                if (!string.IsNullOrEmpty(targetName) && obj is Component c && c.gameObject.name != targetName) continue;
+                                oo.Revert();
+                                revertedObjectOverrides++;
+                            }
+                        }
+                        break;
+                    }
+
+                    case "object":
+                    {
+                        if (string.IsNullOrEmpty(targetName))
+                            return new ErrorResponse("'target' is required when revertScope is 'object'.");
+
+                        GameObject targetGo = FindInPrefabContents(prefabContents, targetName);
+                        if (targetGo == null)
+                            return new ErrorResponse($"Target '{targetName}' not found in prefab '{sanitizedPath}'.");
+
+                        var ids = GetDescendantInstanceIDs(targetGo);
+
+                        // Filter property modifications
+                        var mods = PrefabUtility.GetPropertyModifications(prefabContents);
+                        if (mods != null)
+                        {
+                            var kept = new List<PropertyModification>();
+                            foreach (var mod in mods)
+                            {
+                                if (mod.target != null && ids.Contains(mod.target.GetInstanceID()))
+                                    revertedPropertyMods++;
+                                else
+                                    kept.Add(mod);
+                            }
+                            PrefabUtility.SetPropertyModifications(prefabContents, kept.ToArray());
+                        }
+
+                        // Revert structural overrides on this object
+                        foreach (var ac in PrefabUtility.GetAddedComponents(prefabContents))
+                        {
+                            if (ac.instanceComponent != null && ids.Contains(ac.instanceComponent.gameObject.GetInstanceID()))
+                            { ac.Revert(); revertedAddedComps++; }
+                        }
+                        foreach (var rc in PrefabUtility.GetRemovedComponents(prefabContents))
+                        {
+                            if (rc.containingInstanceGameObject != null && ids.Contains(rc.containingInstanceGameObject.GetInstanceID()))
+                            { rc.Revert(); revertedRemovedComps++; }
+                        }
+                        foreach (var ag in PrefabUtility.GetAddedGameObjects(prefabContents))
+                        {
+                            if (ag.instanceGameObject != null && ag.instanceGameObject.transform.IsChildOf(targetGo.transform))
+                            { ag.Revert(); revertedAddedGOs++; }
+                        }
+                        break;
+                    }
+
+                    case "added_component":
+                    {
+                        if (string.IsNullOrEmpty(componentType))
+                            return new ErrorResponse("'componentType' is required when revertScope is 'added_component'.");
+
+                        foreach (var ac in PrefabUtility.GetAddedComponents(prefabContents))
+                        {
+                            if (ac.instanceComponent == null) continue;
+                            if (ac.instanceComponent.GetType().Name != componentType) continue;
+                            if (!string.IsNullOrEmpty(targetName) && ac.instanceComponent.gameObject.name != targetName) continue;
+                            ac.Revert();
+                            revertedAddedComps++;
+                        }
+                        break;
+                    }
+
+                    case "removed_component":
+                    {
+                        if (string.IsNullOrEmpty(componentType))
+                            return new ErrorResponse("'componentType' is required when revertScope is 'removed_component'.");
+
+                        foreach (var rc in PrefabUtility.GetRemovedComponents(prefabContents))
+                        {
+                            if (rc.assetComponent == null) continue;
+                            if (rc.assetComponent.GetType().Name != componentType) continue;
+                            if (!string.IsNullOrEmpty(targetName) && rc.containingInstanceGameObject != null && rc.containingInstanceGameObject.name != targetName) continue;
+                            rc.Revert();
+                            revertedRemovedComps++;
+                        }
+                        break;
+                    }
+
+                    case "added_gameobject":
+                    {
+                        if (string.IsNullOrEmpty(targetName))
+                            return new ErrorResponse("'target' is required when revertScope is 'added_gameobject' (the name of the added GameObject).");
+
+                        foreach (var ag in PrefabUtility.GetAddedGameObjects(prefabContents))
+                        {
+                            if (ag.instanceGameObject == null) continue;
+                            if (ag.instanceGameObject.name != targetName) continue;
+                            ag.Revert();
+                            revertedAddedGOs++;
+                        }
+                        break;
+                    }
+
+                    default:
+                        return new ErrorResponse($"Unknown revertScope: '{revertScope}'. Valid values: all, property, component, object, added_component, removed_component, added_gameobject.");
+                }
+
+                int totalReverted = revertedPropertyMods + revertedObjectOverrides + revertedAddedComps + revertedRemovedComps + revertedAddedGOs;
+
+                if (totalReverted == 0)
+                {
+                    return new SuccessResponse(
+                        "No matching overrides found to revert.",
+                        new { prefabPath = sanitizedPath, revertScope, revertedCount = 0 }
+                    );
+                }
+
+                // Save the prefab
+                PrefabUtility.SaveAsPrefabAsset(prefabContents, sanitizedPath, out bool success);
+                if (!success)
+                    return new ErrorResponse($"Failed to save prefab asset at '{sanitizedPath}' after reverting overrides.");
+
+                AssetDatabase.Refresh();
+
+                return new SuccessResponse(
+                    $"Reverted {totalReverted} override(s) on '{Path.GetFileName(sanitizedPath)}'.",
+                    new
+                    {
+                        prefabPath = sanitizedPath,
+                        revertScope,
+                        revertedCount = totalReverted,
+                        details = new
+                        {
+                            propertyModificationsReverted = revertedPropertyMods,
+                            objectOverridesReverted = revertedObjectOverrides,
+                            addedComponentsReverted = revertedAddedComps,
+                            removedComponentsReverted = revertedRemovedComps,
+                            addedGameObjectsReverted = revertedAddedGOs
+                        }
+                    }
+                );
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefabContents);
             }
         }
 

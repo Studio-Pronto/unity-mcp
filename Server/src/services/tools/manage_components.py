@@ -49,9 +49,9 @@ async def manage_components(
     properties: Annotated[
         dict[str, Any] | str,
         "Dictionary of property names to values. Example: {\"mass\": 5.0, \"useGravity\": false}. "
-        "For object references, use find syntax: {\"player\": {\"find\": \"Player\", \"method\": \"by_name\"}} "
-        "or with component: {\"targetHealth\": {\"find\": \"Player\", \"component\": \"Health\"}}. "
-        "Find methods: by_name, by_path, by_tag, by_layer."
+        "For object references: {\"player\": {\"name\": \"Player\"}} or with component filter: "
+        "{\"targetHealth\": {\"name\": \"Player\", \"component\": \"Health\"}}. "
+        "Also accepts {\"instanceID\": 123}, {\"guid\": \"...\"}, {\"path\": \"Assets/...\"}."
     ] | None = None,
 ) -> dict[str, Any]:
     """
@@ -67,8 +67,8 @@ async def manage_components(
     - Remove BoxCollider: action="remove", target=-12345, component_type="BoxCollider"
     - Set single property: action="set_property", target="Enemy", component_type="Rigidbody", property="mass", value=5.0
     - Set multiple properties: action="set_property", target="Enemy", component_type="Rigidbody", properties={"mass": 5.0, "useGravity": false}
-    - Set object reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"player": {"find": "Player", "method": "by_name"}}
-    - Set component reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"targetHealth": {"find": "Player", "component": "Health"}}
+    - Set object reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"player": {"name": "Player"}}
+    - Set component reference: action="set_property", target="Enemy", component_type="EnemyAI", properties={"targetHealth": {"name": "Player", "component": "Health"}}
     """
     unity_instance = await get_unity_instance_from_context(ctx)
 

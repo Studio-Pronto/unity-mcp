@@ -523,6 +523,39 @@ manage_prefabs(
     position=[0, 1, 0],
     components_to_add=["AudioSource"]
 )
+
+# List all overrides on a prefab variant
+manage_prefabs(action="get_overrides", prefab_path="Assets/Prefabs/EnemyVariant.prefab")
+
+# Revert ALL overrides (variant becomes identical to base)
+manage_prefabs(action="revert_overrides", prefab_path="Assets/Prefabs/EnemyVariant.prefab", revert_scope="all")
+
+# Revert a single property override
+manage_prefabs(
+    action="revert_overrides",
+    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
+    revert_scope="property",
+    component_type="Rigidbody",
+    property_path="m_Mass"
+)
+
+# Revert all overrides on a specific component
+manage_prefabs(
+    action="revert_overrides",
+    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
+    revert_scope="component",
+    target="Enemy",
+    component_type="Rigidbody"
+)
+
+# Revert an added component
+manage_prefabs(
+    action="revert_overrides",
+    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
+    revert_scope="added_component",
+    target="Enemy",
+    component_type="AudioSource"
+)
 ```
 
 ---

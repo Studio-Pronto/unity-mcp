@@ -246,3 +246,69 @@ def create(target: str, path: str, overwrite: bool, include_inactive: bool, unli
     click.echo(format_output(result, config.format))
     if result.get("success"):
         print_success(f"Created prefab: {path}")
+
+
+@prefab.command("overrides")
+@click.argument("path")
+@click.option("--target", "-t", default=None, help="Filter overrides to a specific object within the prefab.")
+@handle_unity_errors
+def overrides(path: str, target: Optional[str]):
+    """List all overrides on a prefab variant.
+
+    \b
+    Examples:
+        unity-mcp prefab overrides "Assets/Prefabs/EnemyVariant.prefab"
+        unity-mcp prefab overrides "Assets/Prefabs/EnemyVariant.prefab" --target Turret
+    """
+    config = get_config()
+
+    params: dict[str, Any] = {
+        "action": "get_overrides",
+        "prefabPath": path,
+    }
+    if target:
+        params["target"] = target
+
+    result = run_command("manage_prefabs", params, config)
+    click.echo(format_output(result, config.format))
+
+
+REVERT_SCOPE_CHOICE = click.Choice(
+    ["all", "property", "component", "object", "added_component", "removed_component", "added_gameobject"],
+    case_sensitive=False,
+)
+
+
+@prefab.command("revert")
+@click.argument("path")
+@click.option("--scope", "-s", required=True, type=REVERT_SCOPE_CHOICE, help="What to revert.")
+@click.option("--target", "-t", default=None, help="Target object name/path within the prefab.")
+@click.option("--component", "-c", default=None, help="Component type name (e.g. 'Rigidbody').")
+@click.option("--property", "-p", "prop_path", default=None, help="Property path to revert (e.g. 'm_Mass').")
+@handle_unity_errors
+def revert(path: str, scope: str, target: Optional[str], component: Optional[str], prop_path: Optional[str]):
+    """Revert overrides on a prefab variant.
+
+    \b
+    Examples:
+        unity-mcp prefab revert "Assets/Prefabs/EnemyVariant.prefab" --scope all
+        unity-mcp prefab revert "Assets/Prefabs/EnemyVariant.prefab" --scope property -c Rigidbody -p m_Mass
+        unity-mcp prefab revert "Assets/Prefabs/EnemyVariant.prefab" --scope component -c Rigidbody
+        unity-mcp prefab revert "Assets/Prefabs/EnemyVariant.prefab" --scope added_component -t Enemy -c AudioSource
+    """
+    config = get_config()
+
+    params: dict[str, Any] = {
+        "action": "revert_overrides",
+        "prefabPath": path,
+        "revertScope": scope,
+    }
+    if target:
+        params["target"] = target
+    if component:
+        params["componentType"] = component
+    if prop_path:
+        params["propertyPath"] = prop_path
+
+    result = run_command("manage_prefabs", params, config)
+    click.echo(format_output(result, config.format))

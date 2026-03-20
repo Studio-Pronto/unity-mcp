@@ -91,8 +91,9 @@ async def manage_gameobject(
                                     "List of component names to remove"] | None = None,
     component_properties: Annotated[dict[str, dict[str, Any]] | str,
                                     """Dictionary of component names to their properties to set. For example:
-                                    `{"MyScript": {"otherObject": {"find": "Player", "method": "by_name"}}}` assigns GameObject
-                                    `{"MyScript": {"playerHealth": {"find": "Player", "component": "HealthComponent"}}}` assigns Component
+                                    `{"MyScript": {"otherObject": {"name": "Player"}}}` assigns GameObject
+                                    `{"MyScript": {"playerHealth": {"name": "Player", "component": "HealthComponent"}}}` assigns Component
+                                    Also supports {"instanceID": 123}, {"guid": "..."}, {"path": "Assets/..."}.
                                     Example set nested property:
                                     - Access shared material: `{"MeshRenderer": {"sharedMaterial.color": [1, 0, 0, 1]}}`"""] | None = None,
     # --- Parameters for 'duplicate' ---

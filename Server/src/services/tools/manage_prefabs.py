@@ -17,13 +17,15 @@ REQUIRED_PARAMS = {
     "get_hierarchy": ["prefab_path"],
     "create_from_gameobject": ["target", "prefab_path"],
     "modify_contents": ["prefab_path"],
+    "get_overrides": ["prefab_path"],
+    "revert_overrides": ["prefab_path", "revert_scope"],
 }
 
 
 @mcp_for_unity_tool(
     description=(
         "Manages Unity Prefab assets via headless operations (no UI, no prefab stages). "
-        "Actions: get_info, get_hierarchy, create_from_gameobject, modify_contents. "
+        "Actions: get_info, get_hierarchy, create_from_gameobject, modify_contents, get_overrides, revert_overrides. "
         "Use modify_contents for headless prefab editing - ideal for automated workflows. "
         "Use create_child parameter with modify_contents to add child GameObjects to a prefab "
         "(single object or array for batch creation in one save). "
@@ -31,7 +33,10 @@ REQUIRED_PARAMS = {
         "{\"name\": \"Child2\", \"primitive_type\": \"Cube\", \"parent\": \"Child1\"}]. "
         "Use component_properties with modify_contents to set serialized fields on existing components "
         "(e.g. component_properties={\"Rigidbody\": {\"mass\": 5.0}, \"MyScript\": {\"health\": 100}}). "
-        "Supports object references via {\"guid\": \"...\"}, {\"path\": \"Assets/...\"}, or {\"instanceID\": 123}. "
+        "Supports object references via {\"name\": \"...\"}, {\"instanceID\": 123}, {\"guid\": \"...\"}, or {\"path\": \"Assets/...\"}. "
+        "Use get_overrides to list all overrides on a prefab variant (property changes, added/removed components, added GameObjects). "
+        "Use revert_overrides to selectively undo variant overrides: revert_scope='all' for everything, 'property' for a single property, "
+        "'component' for all overrides on a component, 'object' for all overrides on a child, or structural changes individually. "
         "Use manage_asset action=search filterType=Prefab to list prefabs."
     ),
     annotations=ToolAnnotations(
@@ -47,6 +52,8 @@ async def manage_prefabs(
             "get_info",
             "get_hierarchy",
             "modify_contents",
+            "get_overrides",
+            "revert_overrides",
         ],
         "Prefab operation to perform.",
     ],
@@ -67,7 +74,14 @@ async def manage_prefabs(
     components_to_add: Annotated[list[str], "Component types to add in modify_contents."] | None = None,
     components_to_remove: Annotated[list[str], "Component types to remove in modify_contents."] | None = None,
     create_child: Annotated[dict[str, Any] | list[dict[str, Any]], "Create child GameObject(s) in the prefab. Single object or array of objects, each with: name (required), parent (optional, defaults to target), primitive_type (optional: Cube, Sphere, Capsule, Cylinder, Plane, Quad), position, rotation, scale, components_to_add, tag, layer, set_active."] | None = None,
-    component_properties: Annotated[dict[str, dict[str, Any]], "Set properties on existing components in modify_contents. Keys are component type names, values are dicts of property name to value. Example: {\"Rigidbody\": {\"mass\": 5.0}, \"MyScript\": {\"health\": 100}}. Supports object references via {\"guid\": \"...\"}, {\"path\": \"Assets/...\"}, or {\"instanceID\": 123}."] | None = None,
+    component_properties: Annotated[dict[str, dict[str, Any]], "Set properties on existing components in modify_contents. Keys are component type names, values are dicts of property name to value. Example: {\"Rigidbody\": {\"mass\": 5.0}, \"MyScript\": {\"health\": 100}}. Supports object references via {\"name\": \"...\"}, {\"instanceID\": 123}, {\"guid\": \"...\"}, or {\"path\": \"Assets/...\"}. Use {\"component\": \"Type\"} to filter."] | None = None,
+    # revert_overrides parameters
+    revert_scope: Annotated[Literal["all", "property", "component", "object", "added_component", "removed_component", "added_gameobject"] | None,
+                            "Scope of override revert: 'all' reverts everything, 'property' reverts a single property (requires property_path), "
+                            "'component' reverts all overrides on a component (requires component_type), 'object' reverts all overrides on a child object (requires target), "
+                            "'added_component'/'removed_component'/'added_gameobject' revert structural changes."] = None,
+    component_type: Annotated[str | None, "Component type name for revert_overrides (e.g. 'Rigidbody', 'BoxCollider'). Required for property, component, added_component, removed_component scopes."] = None,
+    property_path: Annotated[str | None, "Unity serialized property path to revert (e.g. 'm_Mass', 'm_LocalPosition.x'). Use get_overrides to discover paths. Required for revert_scope='property'."] = None,
 ) -> dict[str, Any]:
     # Back-compat: map 'name' → 'target' for create_from_gameobject (Unity accepts both)
     if action == "create_from_gameobject" and target is None and name is not None:
@@ -154,6 +168,12 @@ async def manage_prefabs(
             params["componentsToRemove"] = components_to_remove
         if component_properties is not None:
             params["componentProperties"] = component_properties
+        if revert_scope is not None:
+            params["revertScope"] = revert_scope
+        if component_type is not None:
+            params["componentType"] = component_type
+        if property_path is not None:
+            params["propertyPath"] = property_path
         if create_child is not None:
             # Normalize vector fields within create_child (handles single object or array)
             def normalize_child_params(child: Any, index: int | None = None) -> tuple[dict | None, str | None]:
