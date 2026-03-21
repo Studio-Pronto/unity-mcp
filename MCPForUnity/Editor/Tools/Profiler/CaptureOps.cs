@@ -5,7 +5,6 @@ using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
-using UnityEngine.Profiling;
 
 namespace MCPForUnity.Editor.Tools.Profiler
 {
@@ -36,9 +35,9 @@ namespace MCPForUnity.Editor.Tools.Profiler
             if (!string.IsNullOrEmpty(parentDir))
                 Directory.CreateDirectory(parentDir);
 
-            Profiler.logFile = fullPath;
-            Profiler.enableBinaryLog = true;
-            Profiler.enabled = true;
+            UnityEngine.Profiling.Profiler.logFile = fullPath;
+            UnityEngine.Profiling.Profiler.enableBinaryLog = true;
+            UnityEngine.Profiling.Profiler.enabled = true;
             _currentCapturePath = fullPath;
 
             return new
@@ -62,11 +61,11 @@ namespace MCPForUnity.Editor.Tools.Profiler
             var p = new ToolParams(@params);
             bool keepEnabled = p.GetBool("keep_profiler_enabled", false);
 
-            string path = Profiler.logFile;
-            Profiler.enableBinaryLog = false;
+            string path = UnityEngine.Profiling.Profiler.logFile;
+            UnityEngine.Profiling.Profiler.enableBinaryLog = false;
 
             if (!keepEnabled)
-                Profiler.enabled = false;
+                UnityEngine.Profiling.Profiler.enabled = false;
 
             long sizeBytes = 0;
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -86,7 +85,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     path,
                     size_bytes = sizeBytes,
                     size_mb = Math.Round(sizeBytes / (1024.0 * 1024.0), 2),
-                    profiler_enabled = Profiler.enabled,
+                    profiler_enabled = UnityEngine.Profiling.Profiler.enabled,
                     play_mode = EditorApplication.isPlaying
                 }
             };
@@ -102,9 +101,9 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 message = "Profiler capture status.",
                 data = new
                 {
-                    profiler_enabled = Profiler.enabled,
-                    binary_log_enabled = Profiler.enableBinaryLog,
-                    log_file = Profiler.logFile ?? "",
+                    profiler_enabled = UnityEngine.Profiling.Profiler.enabled,
+                    binary_log_enabled = UnityEngine.Profiling.Profiler.enableBinaryLog,
+                    log_file = UnityEngine.Profiling.Profiler.logFile ?? "",
                     deep_profiling = ProfilerDriver.deepProfiling,
                     current_capture_path = _currentCapturePath ?? "",
                     play_mode = EditorApplication.isPlaying

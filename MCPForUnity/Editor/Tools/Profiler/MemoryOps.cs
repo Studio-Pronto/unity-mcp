@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.Profiling;
 using UnityEditor;
-using UnityEngine.Profiling;
 
 namespace MCPForUnity.Editor.Tools.Profiler
 {
@@ -27,13 +27,13 @@ namespace MCPForUnity.Editor.Tools.Profiler
             var p = new ToolParams(@params);
             string label = p.Get("label");
 
-            double totalAllocMb = Math.Round(Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2);
-            double totalReservedMb = Math.Round(Profiler.GetTotalReservedMemoryLong() / (1024.0 * 1024.0), 2);
-            double unusedReservedMb = Math.Round(Profiler.GetTotalUnusedReservedMemoryLong() / (1024.0 * 1024.0), 2);
-            double monoUsedMb = Math.Round(Profiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2);
-            double monoHeapMb = Math.Round(Profiler.GetMonoHeapSizeLong() / (1024.0 * 1024.0), 2);
-            double graphicsMb = Math.Round(Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2);
-            double tempAllocMb = Math.Round(Profiler.GetTempAllocatorSize() / (1024.0 * 1024.0), 2);
+            double totalAllocMb = Math.Round(UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2);
+            double totalReservedMb = Math.Round(UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() / (1024.0 * 1024.0), 2);
+            double unusedReservedMb = Math.Round(UnityEngine.Profiling.Profiler.GetTotalUnusedReservedMemoryLong() / (1024.0 * 1024.0), 2);
+            double monoUsedMb = Math.Round(UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2);
+            double monoHeapMb = Math.Round(UnityEngine.Profiling.Profiler.GetMonoHeapSizeLong() / (1024.0 * 1024.0), 2);
+            double graphicsMb = Math.Round(UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2);
+            double tempAllocMb = Math.Round(UnityEngine.Profiling.Profiler.GetTempAllocatorSize() / (1024.0 * 1024.0), 2);
             int gcCollections = GC.CollectionCount(0);
 
             // Read GC alloc per frame via ProfilerRecorder (LastValue)
@@ -175,7 +175,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         (string.IsNullOrEmpty(objName) || objName.IndexOf(target, StringComparison.OrdinalIgnoreCase) < 0))
                         continue;
 
-                    long size = Profiler.GetRuntimeMemorySizeLong(obj);
+                    long size = UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(obj);
                     if (size < minSizeBytes) continue;
 
                     filtered.Add((objName, objType, size, obj.GetInstanceID()));
@@ -236,7 +236,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 try
                 {
                     string typeName = obj.GetType().Name;
-                    long size = Profiler.GetRuntimeMemorySizeLong(obj);
+                    long size = UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(obj);
 
                     if (!typeGroups.ContainsKey(typeName))
                         typeGroups[typeName] = (0, 0);

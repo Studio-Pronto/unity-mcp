@@ -2,7 +2,6 @@ using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditorInternal;
-using UnityEngine.Profiling;
 
 namespace MCPForUnity.Editor.Tools.Profiler
 {
@@ -12,13 +11,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
         internal static object ProfilerEnable(JObject @params)
         {
-            var p = new ToolParams(@params);
-            int? maxHistory = p.GetInt("max_history_frames");
-
-            Profiler.enabled = true;
-
-            if (maxHistory.HasValue && maxHistory.Value > 0)
-                ProfilerDriver.SetMaxFrameHistoryLength(maxHistory.Value);
+            UnityEngine.Profiling.Profiler.enabled = true;
 
             return new
             {
@@ -27,7 +20,6 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 data = new
                 {
                     profiler_enabled = true,
-                    max_history_frames = maxHistory,
                     play_mode = EditorApplication.isPlaying
                 }
             };
@@ -37,7 +29,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
         internal static object ProfilerDisable(JObject @params)
         {
-            Profiler.enabled = false;
+            UnityEngine.Profiling.Profiler.enabled = false;
 
             return new
             {
@@ -89,10 +81,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
             if (string.IsNullOrEmpty(areaName))
                 return new ErrorResponse("'area' parameter is required. Valid areas: CPU, GPU, Rendering, Memory, Audio, Video, Physics, Physics2D, NetworkMessages, NetworkOperations, UI, UIDetails, GlobalIllumination, VirtualTexturing.");
 
-            if (!System.Enum.TryParse<ProfilerArea>(areaName, true, out var area))
+            if (!System.Enum.TryParse<UnityEngine.Profiling.ProfilerArea>(areaName, true, out var area))
                 return new ErrorResponse($"Unknown profiler area: '{areaName}'. Valid areas: CPU, GPU, Rendering, Memory, Audio, Video, Physics, Physics2D, NetworkMessages, NetworkOperations, UI, UIDetails, GlobalIllumination, VirtualTexturing.");
 
-            Profiler.SetAreaEnabled(area, enabled);
+            UnityEngine.Profiling.Profiler.SetAreaEnabled(area, enabled);
 
             return new
             {

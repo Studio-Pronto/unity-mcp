@@ -1,11 +1,10 @@
 using System;
 using MCPForUnity.Editor.Helpers;
-using MCPForUnity.Editor.Tools.Profiler;
+using MCPForUnity.Editor.Tools.Profiling;
 using Newtonsoft.Json.Linq;
 using Unity.Profiling;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Profiling;
 
 namespace MCPForUnity.Editor.Resources.Scene
 {
@@ -46,14 +45,14 @@ namespace MCPForUnity.Editor.Resources.Scene
                     data = new
                     {
                         play_mode = EditorApplication.isPlaying,
-                        profiler_enabled = Profiler.enabled,
+                        profiler_enabled = UnityEngine.Profiling.Profiler.enabled,
                         estimated_fps = Math.Round(fps, 1),
                         frame_time_ms = Time.smoothDeltaTime > 0 ? Math.Round(Time.smoothDeltaTime * 1000, 2) : 0.0,
                         memory = new
                         {
-                            total_allocated_mb = Math.Round(Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2),
-                            mono_used_mb = Math.Round(Profiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2),
-                            graphics_mb = Math.Round(Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2)
+                            total_allocated_mb = Math.Round(UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2),
+                            mono_used_mb = Math.Round(UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2),
+                            graphics_mb = Math.Round(UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2)
                         },
                         rendering = new
                         {
