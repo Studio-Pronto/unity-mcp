@@ -294,15 +294,11 @@ def memory_type_summary(min_total_mb, max_objects):
 # --- Profiler control ---
 
 @profiler.command("profiler-enable")
-@click.option("--max-history", type=int, default=None, help="Max frame history length.")
 @handle_unity_errors
-def profiler_enable(max_history):
+def profiler_enable():
     """Enable profiler recording."""
     config = get_config()
-    params = {"action": "profiler_enable"}
-    if max_history is not None:
-        params["max_history_frames"] = max_history
-    result = run_command("manage_profiler", params, config)
+    result = run_command("manage_profiler", {"action": "profiler_enable"}, config)
     click.echo(format_output(result, config.format))
 
 

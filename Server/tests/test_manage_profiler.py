@@ -371,10 +371,10 @@ def test_profiler_disable_sends_action(mock_unity):
 
 def test_profiler_enable_sends_action(mock_unity):
     result = asyncio.run(
-        manage_profiler(SimpleNamespace(), action="profiler_enable", max_history_frames=600)
+        manage_profiler(SimpleNamespace(), action="profiler_enable")
     )
     assert result["success"] is True
-    assert mock_unity["params"]["max_history_frames"] == 600
+    assert mock_unity["params"]["action"] == "profiler_enable"
 
 
 def test_deep_profiling_set_forwards_enabled(mock_unity):

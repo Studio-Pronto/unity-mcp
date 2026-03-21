@@ -120,7 +120,6 @@ async def manage_profiler(
     keep_profiler_enabled: Annotated[Optional[bool], "Keep profiler on after capture_stop."] = None,
     # Control
     enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set and area_set."] = None,
-    max_history_frames: Annotated[Optional[int], "Max frame history length for profiler_enable."] = None,
     area: Annotated[Optional[str], "Profiler area name for area_set."] = None,
 ) -> dict[str, Any]:
     action_lower = action.lower()
@@ -144,7 +143,7 @@ async def manage_profiler(
         "page_size": page_size, "cursor": cursor,
         "category": category, "search": search, "output_path": output_path,
         "keep_profiler_enabled": keep_profiler_enabled, "enabled": enabled,
-        "max_history_frames": max_history_frames, "area": area,
+        "area": area,
     }
     for key, val in param_map.items():
         if val is not None:

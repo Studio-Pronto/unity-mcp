@@ -1191,7 +1191,7 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 - `capture_status` — Current profiler recording state
 
 **Control:**
-- `profiler_enable` — Enable profiler recording. Params: `max_history_frames` (optional)
+- `profiler_enable` — Enable profiler recording
 - `profiler_disable` — Disable profiler recording (counter sampling continues)
 - `deep_profiling_set` — Toggle deep profiling (significant overhead). Params: `enabled`
 - `area_set` — Enable/disable specific profiler areas. Params: `area`, `enabled`
