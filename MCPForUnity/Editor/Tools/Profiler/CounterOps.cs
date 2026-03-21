@@ -651,13 +651,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
             }
         }
 
-        private static Dictionary<string, object> ComputeStats(long[] values, ProfilerRecorderValueType unitType)
+        private static Dictionary<string, object> ComputeStats(long[] values, ProfilerMarkerDataUnit unitType)
         {
             if (values.Length == 0)
                 return new Dictionary<string, object> { ["mean"] = 0, ["min"] = 0, ["max"] = 0, ["p95"] = 0, ["p99"] = 0 };
-
-            bool isNanoseconds = unitType == ProfilerRecorderValueType.Int64; // timing markers report in ns
-            double divisor = isNanoseconds ? 1_000_000.0 : 1.0; // convert ns to ms for timings
 
             var sorted = values.OrderBy(v => v).ToArray();
             double mean = values.Average();
@@ -666,9 +663,9 @@ namespace MCPForUnity.Editor.Tools.Profiler
             long p95 = sorted[Math.Min((int)(sorted.Length * 0.95), sorted.Length - 1)];
             long p99 = sorted[Math.Min((int)(sorted.Length * 0.99), sorted.Length - 1)];
 
-            // Only convert to ms for timing values, not counts
-            if (isNanoseconds && mean > 100_000) // heuristic: > 0.1ms means it's likely timing data
+            if (unitType == ProfilerMarkerDataUnit.TimeNanoseconds)
             {
+                double divisor = 1_000_000.0; // ns to ms
                 return new Dictionary<string, object>
                 {
                     ["mean"] = Math.Round(mean / divisor, 2),
