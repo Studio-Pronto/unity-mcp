@@ -1,6 +1,6 @@
 using System;
 using MCPForUnity.Editor.Helpers;
-using MCPForUnity.Editor.Tools.Profiling;
+using MCPForUnity.Editor.Tools.Profiler;
 using Newtonsoft.Json.Linq;
 using Unity.Profiling;
 using UnityEditor;
