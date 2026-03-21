@@ -269,6 +269,7 @@ def register_commands():
         ("cli.commands.probuilder", "probuilder"),
         ("cli.commands.camera", "camera"),
         ("cli.commands.graphics", "graphics"),
+        ("cli.commands.profiler", "profiler"),
         ("cli.commands.packages", "packages"),
         ("cli.commands.reflect", "reflect"),
         ("cli.commands.docs", "docs"),

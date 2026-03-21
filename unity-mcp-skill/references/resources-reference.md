@@ -7,6 +7,7 @@ Resources provide read-only access to Unity state. Use resources to inspect befo
 - [Editor State Resources](#editor-state-resources)
 - [Camera Resources](#camera-resources)
 - [Graphics Resources](#graphics-resources)
+- [Profiler Resources](#profiler-resources)
 - [Scene & GameObject Resources](#scene--gameobject-resources)
 - [Prefab Resources](#prefab-resources)
 - [Project Resources](#project-resources)
@@ -274,6 +275,43 @@ mcpforunity://{category}/{resource_path}[?query_params]
 - `rendererDataName`: Which URP renderer data asset is active
 
 **Use with:** `manage_graphics` feature actions (feature_list, feature_add, feature_remove, feature_toggle, etc.)
+
+---
+
+## Profiler Resources
+
+### mcpforunity://profiler/snapshot
+
+**Purpose:** Instant profiler snapshot: estimated FPS, memory state, key rendering counters, GC alloc/frame, profiler state, and active sampling sessions. No blocking -- reads current values immediately.
+
+**Returns:**
+```json
+{
+  "play_mode": true,
+  "profiler_enabled": false,
+  "estimated_fps": 60.2,
+  "frame_time_ms": 16.61,
+  "memory": {
+    "total_allocated_mb": 412.3,
+    "mono_used_mb": 45.2,
+    "graphics_mb": 189.4
+  },
+  "rendering": {
+    "draw_calls": 342,
+    "batches": 285,
+    "triangles": 1240000
+  },
+  "gc_alloc_per_frame_bytes": 2048,
+  "active_sessions": 0
+}
+```
+
+**Key Fields:**
+- `play_mode`: Whether Unity is in Play mode (frame time/rendering data only meaningful when true)
+- `profiler_enabled`: Whether Unity's profiler is recording frame data (needed for `hotspots_get`)
+- `active_sessions`: Number of active `sample_start` counter sessions
+
+**Use with:** `manage_profiler` actions for detailed investigation when snapshot shows issues.
 
 ---
 

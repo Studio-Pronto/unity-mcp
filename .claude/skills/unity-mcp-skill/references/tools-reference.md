@@ -17,6 +17,7 @@ Complete reference for all MCP tools. Each tool includes parameters, types, and 
 - [Testing Tools](#testing-tools)
 - [Camera Tools](#camera-tools)
 - [Graphics Tools](#graphics-tools)
+- [Profiler Tools](#profiler-tools)
 - [Package Tools](#package-tools)
 - [ProBuilder Tools](#probuilder-tools)
 - [Docs Tools](#docs-tools)
@@ -1132,6 +1133,118 @@ manage_graphics(action="feature_reorder", order=[2, 0, 1])
 - `mcpforunity://scene/volumes` — Lists all Volume components in the scene with their profiles and effects
 - `mcpforunity://rendering/stats` — Current rendering performance counters
 - `mcpforunity://pipeline/renderer-features` — URP renderer features on the active renderer
+
+---
+
+## Profiler Tools
+
+### manage_profiler
+
+Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, memory profiling, GC tracking, profiler capture, and profiler control. Works autonomously — auto-enables profiler when needed. Use `ping` to check profiler state.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | Yes | Action to perform (see categories below) |
+| `label` | string | Sometimes | Session label for sampling or memory snapshots |
+| `counters` | string | Sometimes | Category name (e.g., `render`, `physics`) or counter names |
+| `frames` | int | No | Number of frames to collect/analyze (default 120) |
+| `top_n` | int | No | Number of top results to return (default 20) |
+| `label_a` | string | Sometimes | First label for comparison actions |
+| `label_b` | string | Sometimes | Second label for comparison actions |
+| `marker_name` | string | Sometimes | Marker name for `hotspots_detail` |
+| `page_size` | int | No | Results per page for paged actions |
+| `cursor` | string | No | Pagination cursor (integer offset) |
+
+**Actions by category:**
+
+**Status:**
+- `ping` — Check profiler tool availability, play mode, profiler enabled state, active session count
+
+**Counter Sampling (ProfilerRecorder, works without Profiler window):**
+- `sample_start` — Start recording counters. Params: `label` (required), `counters` (category name or counter list), `capacity` (default 300)
+- `sample_stop` — Stop and dispose recorders. Params: `label` (optional, omit to stop all)
+- `sample_read` — Read accumulated stats (mean/p95/p99). Params: `label`, `last_n` (optional)
+- `sample_compare` — Compare two sessions with deltas. Params: `label_a`, `label_b`, `threshold_pct` (default 5.0)
+- `sample_list` — List active sampling sessions
+- `counter_read` — One-shot read of specific counters. Params: `counters`
+- `counter_list` — List available profiler counters. Params: `category` (optional), `search` (optional), `page_size`, `cursor`
+
+**Frame Time:**
+- `frame_time_get` — Self-contained blocking call. Returns main thread, render thread, GPU breakdown with bottleneck classification and 60fps headroom. Params: `frames` (default 120)
+
+**CPU Hotspots (HierarchyFrameDataView, auto-enables profiler):**
+- `hotspots_get` — Top-N expensive markers by self time. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all)
+- `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Params: `marker_name`, `frames`
+- `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Params: `frames`, `top_n`
+
+**Memory (instant, no profiler needed):**
+- `memory_snapshot` — Labeled memory snapshot (total/mono/graphics/GC). Params: `label` (optional)
+- `memory_compare` — Compare two labeled snapshots. Params: `label_a`, `label_b`
+- `memory_objects` — Per-object memory by type/name, paged. Params: `type`, `target`, `min_size_kb`, `page_size`, `cursor`
+- `memory_type_summary` — Memory grouped by object type. Params: `min_total_mb`, `max_objects`
+
+**Capture (.raw files):**
+- `capture_start` — Start recording to .raw profiler capture file. Params: `output_path` (optional, auto-generated)
+- `capture_stop` — Stop recording, return file path and size. Params: `keep_profiler_enabled`
+- `capture_status` — Current profiler recording state
+
+**Control:**
+- `profiler_enable` — Enable profiler recording. Params: `max_history_frames` (optional)
+- `profiler_disable` — Disable profiler recording (counter sampling continues)
+- `deep_profiling_set` — Toggle deep profiling (significant overhead). Params: `enabled`
+- `area_set` — Enable/disable specific profiler areas. Params: `area`, `enabled`
+
+**Physics:**
+- `physics_get` — Self-contained physics counter snapshot. Params: `frames` (default 120)
+
+**Examples:**
+
+```python
+# Check profiler state
+manage_profiler(action="ping")
+
+# Get frame time with bottleneck classification
+manage_profiler(action="frame_time_get", frames=120)
+
+# Find CPU hotspots
+manage_profiler(action="hotspots_get", top_n=10, frames=120, thread="main")
+
+# Drill into a specific marker
+manage_profiler(action="hotspots_detail", marker_name="MeshCollider.Bake")
+
+# A/B comparison workflow
+manage_profiler(action="sample_start", label="before", counters="render")
+# ... user plays ...
+manage_profiler(action="sample_read", label="before")
+# ... make a change ...
+manage_profiler(action="sample_start", label="after", counters="render")
+# ... user plays ...
+manage_profiler(action="sample_compare", label_a="before", label_b="after")
+
+# Memory investigation
+manage_profiler(action="memory_snapshot", label="baseline")
+manage_profiler(action="memory_type_summary")
+manage_profiler(action="memory_objects", type="Texture2D", min_size_kb=100)
+
+# GC tracking
+manage_profiler(action="gc_track", frames=180)
+
+# Save .raw capture
+manage_profiler(action="capture_start")
+# ... user plays ...
+manage_profiler(action="capture_stop")
+
+# Physics profiling
+manage_profiler(action="physics_get", frames=120)
+
+# List available counters
+manage_profiler(action="counter_list", category="render")
+```
+
+**Resources:**
+- `mcpforunity://profiler/snapshot` — Instant profiler snapshot: FPS, memory, rendering counters, GC alloc, profiler state
 
 ---
 
