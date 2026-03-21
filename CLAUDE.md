@@ -168,6 +168,53 @@ cd Server && uv run pytest tests/ -k "test_create_material" -v
 3. Add C# implementation in `MCPForUnity/Editor/Tools/Manage<Domain>.cs` with `[McpForUnityTool]`
 4. Add Python tests in `Server/tests/test_manage_<domain>.py`
 5. Add Unity tests in `TestProjects/UnityMCPTests/Assets/Tests/`
+6. **Add `.meta` files** for every new C# file AND folder (see below)
+
+### Unity .meta Files (REQUIRED)
+
+Every file and folder under `MCPForUnity/` needs a companion `.meta` file or Unity will ignore it. This applies to:
+- New `.cs` files (need a MonoImporter `.meta`)
+- New directories (need a folder `.meta`)
+- New non-code assets (textures, ScriptableObjects, etc.)
+
+**When to create them:** Any time you create a new file or folder inside `MCPForUnity/`. Forgetting `.meta` files causes Unity to silently ignore the assets with "has no meta file, but it's in an immutable folder" warnings.
+
+**How to create them:** Each `.meta` file needs a unique GUID. Use this script from the repo root:
+```bash
+python3 -c "
+import uuid
+
+# For a FOLDER (e.g., MCPForUnity/Editor/Tools/NewFolder.meta):
+FOLDER = '''fileFormatVersion: 2
+guid: {guid}
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {{}}
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+'''
+
+# For a CS FILE (e.g., MCPForUnity/Editor/Tools/NewFile.cs.meta):
+CS_FILE = '''fileFormatVersion: 2
+guid: {guid}
+MonoImporter:
+  externalObjects: {{}}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {{instanceID: 0}}
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+'''
+
+# Generate one:
+print(CS_FILE.format(guid=uuid.uuid4().hex))
+"
+```
+
+**Naming:** The meta file goes next to its asset: `Foo.cs` → `Foo.cs.meta`, `MyFolder/` → `MyFolder.meta`.
 
 ## What Not To Do
 
