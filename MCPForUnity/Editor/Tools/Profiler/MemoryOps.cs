@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
+using Unity.Collections;
 using Unity.Profiling;
 using UnityEditor;
 
@@ -277,6 +278,62 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     play_mode = EditorApplication.isPlaying
                 }
             };
+        }
+
+        // === memory_fragmentation ===
+
+        internal static object Fragmentation(JObject @params)
+        {
+            const int bucketCount = 32;
+            var stats = new NativeArray<int>(bucketCount, Allocator.Temp);
+            try
+            {
+                long totalFreeBlocks = UnityEngine.Profiling.Profiler.GetTotalFragmentationInfo(stats);
+
+                var buckets = new List<object>();
+                for (int i = 0; i < bucketCount; i++)
+                {
+                    if (stats[i] > 0)
+                    {
+                        long blockSize = 1L << i;
+                        buckets.Add(new
+                        {
+                            bucket = i,
+                            block_size = blockSize,
+                            block_size_label = FormatBytes(blockSize),
+                            free_blocks = stats[i],
+                            total_free_bytes = blockSize * stats[i]
+                        });
+                    }
+                }
+
+                return new
+                {
+                    success = true,
+                    message = $"Heap fragmentation: {totalFreeBlocks} free blocks across {buckets.Count} size classes.",
+                    data = new
+                    {
+                        total_free_blocks = totalFreeBlocks,
+                        buckets,
+                        play_mode = EditorApplication.isPlaying
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ErrorResponse($"Fragmentation info unavailable (requires Unity 2021.2+): {ex.Message}");
+            }
+            finally
+            {
+                if (stats.IsCreated) stats.Dispose();
+            }
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes >= 1024 * 1024) return $"{bytes / (1024 * 1024)}MB";
+            if (bytes >= 1024) return $"{bytes / 1024}KB";
+            return $"{bytes}B";
         }
 
         internal sealed class MemorySnapshotData

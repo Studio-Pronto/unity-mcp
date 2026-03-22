@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
@@ -94,6 +96,79 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 {
                     area = area.ToString(),
                     enabled,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
+
+        // === profiler_status ===
+
+        internal static object ProfilerStatus(JObject @params)
+        {
+            var areas = new Dictionary<string, bool>();
+            foreach (UnityEngine.Profiling.ProfilerArea a in
+                Enum.GetValues(typeof(UnityEngine.Profiling.ProfilerArea)))
+            {
+                try { areas[a.ToString()] = UnityEngine.Profiling.Profiler.GetAreaEnabled(a); }
+                catch { }
+            }
+
+            bool callstacksEnabled = false;
+            try { callstacksEnabled = UnityEngine.Profiling.Profiler.enableAllocationCallstacks; }
+            catch { } // Unity < 2021.2
+
+            return new
+            {
+                success = true,
+                message = "Profiler status.",
+                data = new
+                {
+                    profiler_enabled = UnityEngine.Profiling.Profiler.enabled,
+                    deep_profiling = ProfilerDriver.deepProfiling,
+                    allocation_callstacks = callstacksEnabled,
+                    binary_log_enabled = UnityEngine.Profiling.Profiler.enableBinaryLog,
+                    log_file = UnityEngine.Profiling.Profiler.logFile ?? "",
+                    max_used_memory = UnityEngine.Profiling.Profiler.maxUsedMemory,
+                    areas,
+                    active_sessions = CounterOps.GetActiveSessionCount(),
+                    frame_count = ProfilerDriver.lastFrameIndex - ProfilerDriver.firstFrameIndex,
+                    first_frame = ProfilerDriver.firstFrameIndex,
+                    last_frame = ProfilerDriver.lastFrameIndex,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
+
+        // === callstacks_set ===
+
+        internal static object CallstacksSet(JObject @params)
+        {
+            var p = new ToolParams(@params);
+            if (!p.Has("enabled"))
+                return new ErrorResponse("'enabled' parameter is required for callstacks_set.");
+            bool enabled = p.GetBool("enabled");
+
+            try
+            {
+                UnityEngine.Profiling.Profiler.enableAllocationCallstacks = enabled;
+            }
+            catch (Exception)
+            {
+                return new ErrorResponse("Allocation callstacks require Unity 2021.2+.");
+            }
+
+            string warning = enabled
+                ? " Warning: allocation callstacks add overhead on every managed allocation. Disable when done."
+                : "";
+
+            return new
+            {
+                success = true,
+                message = $"Allocation callstacks {(enabled ? "enabled" : "disabled")}.{warning}",
+                data = new
+                {
+                    allocation_callstacks = enabled,
+                    profiler_enabled = UnityEngine.Profiling.Profiler.enabled,
                     play_mode = EditorApplication.isPlaying
                 }
             };

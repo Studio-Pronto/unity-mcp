@@ -64,7 +64,7 @@ def test_no_duplicate_actions():
 
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 24
+    assert len(ALL_ACTIONS) == 29
 
 
 def test_sample_actions_count():
@@ -80,19 +80,19 @@ def test_frame_time_actions_count():
 
 
 def test_hierarchy_actions_count():
-    assert len(HIERARCHY_ACTIONS) == 3
+    assert len(HIERARCHY_ACTIONS) == 4
 
 
 def test_memory_actions_count():
-    assert len(MEMORY_ACTIONS) == 4
+    assert len(MEMORY_ACTIONS) == 5
 
 
 def test_capture_actions_count():
-    assert len(CAPTURE_ACTIONS) == 3
+    assert len(CAPTURE_ACTIONS) == 4
 
 
 def test_control_actions_count():
-    assert len(CONTROL_ACTIONS) == 4
+    assert len(CONTROL_ACTIONS) == 6
 
 
 def test_physics_actions_count():
@@ -404,6 +404,69 @@ def test_physics_get_forwards_frames(mock_unity):
     )
     assert result["success"] is True
     assert mock_unity["params"]["frames"] == 60
+
+
+# ---------------------------------------------------------------------------
+# Profiler status
+# ---------------------------------------------------------------------------
+
+def test_profiler_status_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="profiler_status")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "profiler_status"
+
+
+# ---------------------------------------------------------------------------
+# Callstacks
+# ---------------------------------------------------------------------------
+
+def test_callstacks_set_forwards_enabled(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="callstacks_set", enabled=True)
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Capture load
+# ---------------------------------------------------------------------------
+
+def test_capture_load_forwards_input_path(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="capture_load",
+            input_path="Profiler/capture.raw",
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["input_path"] == "Profiler/capture.raw"
+
+
+# ---------------------------------------------------------------------------
+# Memory fragmentation
+# ---------------------------------------------------------------------------
+
+def test_memory_fragmentation_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="memory_fragmentation")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "memory_fragmentation"
+
+
+# ---------------------------------------------------------------------------
+# Threads list
+# ---------------------------------------------------------------------------
+
+def test_threads_list_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="threads_list")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "threads_list"
 
 
 # ---------------------------------------------------------------------------

@@ -332,6 +332,63 @@ def area_set(area, enabled):
     click.echo(format_output(result, config.format))
 
 
+# --- Status ---
+
+@profiler.command("status")
+@handle_unity_errors
+def profiler_status():
+    """Show full profiler configuration state."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "profiler_status"}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Callstacks ---
+
+@profiler.command("callstacks")
+@click.option("--enabled/--disabled", required=True, help="Enable or disable allocation callstacks.")
+@handle_unity_errors
+def callstacks(enabled):
+    """Toggle allocation callstack recording (adds overhead)."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "callstacks_set", "enabled": enabled}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Capture load ---
+
+@profiler.command("capture-load")
+@click.option("--input", "-i", "input_path", required=True, help="Path to .raw profiler capture file.")
+@handle_unity_errors
+def capture_load(input_path):
+    """Load a .raw profiler capture for offline analysis."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "capture_load", "input_path": input_path}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Memory fragmentation ---
+
+@profiler.command("memory-fragmentation")
+@handle_unity_errors
+def memory_fragmentation():
+    """Show heap fragmentation by size bucket."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "memory_fragmentation"}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Threads ---
+
+@profiler.command("threads")
+@handle_unity_errors
+def threads_list():
+    """List all profiled threads."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "threads_list"}, config)
+    click.echo(format_output(result, config.format))
+
+
 # --- Physics ---
 
 @profiler.command("physics")

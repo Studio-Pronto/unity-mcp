@@ -1175,26 +1175,31 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 - `frame_time_get` — Self-contained blocking call. Returns main thread, render thread, GPU breakdown with bottleneck classification and 60fps headroom. Params: `frames` (default 120)
 
 **CPU Hotspots (HierarchyFrameDataView, auto-enables profiler):**
-- `hotspots_get` — Top-N expensive markers by self time. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all)
-- `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Params: `marker_name`, `frames`
-- `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Params: `frames`, `top_n`
+- `hotspots_get` — Top-N expensive markers by self time. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all/numeric index)
+- `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Includes `callstack` and `callstacks_available` when deep profiling or allocation callstacks are enabled. Params: `marker_name`, `frames`
+- `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Includes per-allocator `callstack` when allocation callstacks are enabled. Params: `frames`, `top_n`
+- `threads_list` — List all profiled threads (index, name, group). Use thread index with `hotspots_get` thread param
 
 **Memory (instant, no profiler needed):**
 - `memory_snapshot` — Labeled memory snapshot (total/mono/graphics/GC). Params: `label` (optional)
 - `memory_compare` — Compare two labeled snapshots. Params: `label_a`, `label_b`
 - `memory_objects` — Per-object memory by type/name, paged. Params: `type`, `target`, `min_size_kb`, `page_size`, `cursor`
 - `memory_type_summary` — Memory grouped by object type. Params: `min_total_mb`, `max_objects`
+- `memory_fragmentation` — Heap fragmentation by power-of-two size bucket (Unity 2021.2+)
 
 **Capture (.raw files):**
 - `capture_start` — Start recording to .raw profiler capture file. Params: `output_path` (optional, auto-generated)
 - `capture_stop` — Stop recording, return file path and size. Params: `keep_profiler_enabled`
 - `capture_status` — Current profiler recording state
+- `capture_load` — Load .raw profiler capture into buffer for offline analysis. Params: `input_path`
 
 **Control:**
 - `profiler_enable` — Enable profiler recording
 - `profiler_disable` — Disable profiler recording (counter sampling continues)
 - `deep_profiling_set` — Toggle deep profiling (significant overhead). Params: `enabled`
 - `area_set` — Enable/disable specific profiler areas. Params: `area`, `enabled`
+- `profiler_status` — Full profiler state: areas, deep profiling, callstacks, buffer, sessions
+- `callstacks_set` — Toggle allocation callstack recording. Params: `enabled`. Significant overhead — disable when done
 
 **Physics:**
 - `physics_get` — Self-contained physics counter snapshot. Params: `frames` (default 120)
@@ -1241,6 +1246,27 @@ manage_profiler(action="physics_get", frames=120)
 
 # List available counters
 manage_profiler(action="counter_list", category="render")
+
+# Full profiler status check
+manage_profiler(action="profiler_status")
+
+# Enable allocation callstacks, then track GC with source locations
+manage_profiler(action="callstacks_set", enabled=True)
+manage_profiler(action="gc_track", frames=180)
+
+# Capture → load → analyze workflow
+manage_profiler(action="capture_start")
+# ... gameplay ...
+manage_profiler(action="capture_stop")
+manage_profiler(action="capture_load", input_path="Profiler/capture_2026-03-21_14-30-00.raw")
+manage_profiler(action="hotspots_get", frames=500)
+
+# Check heap fragmentation
+manage_profiler(action="memory_fragmentation")
+
+# List all profiled threads, then analyze a specific worker thread
+manage_profiler(action="threads_list")
+manage_profiler(action="hotspots_get", thread="3", frames=120)
 ```
 
 **Resources:**

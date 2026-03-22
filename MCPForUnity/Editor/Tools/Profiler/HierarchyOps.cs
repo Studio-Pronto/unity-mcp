@@ -83,20 +83,18 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
             // Determine thread indices to read
             var threadIndices = new List<int>();
-            switch (threadParam?.ToLowerInvariant())
+            string tp = threadParam?.ToLowerInvariant();
+            if (tp == "render")
+                threadIndices.Add(1);
+            else if (tp == "all")
             {
-                case "render":
-                case "1":
-                    threadIndices.Add(1);
-                    break;
-                case "all":
-                    threadIndices.Add(0);
-                    threadIndices.Add(1);
-                    break;
-                default: // "main" or "0"
-                    threadIndices.Add(0);
-                    break;
+                threadIndices.Add(0);
+                threadIndices.Add(1);
             }
+            else if (int.TryParse(tp, out int customIndex))
+                threadIndices.Add(customIndex);
+            else // "main" or default
+                threadIndices.Add(0);
 
             // Accumulate marker data across frames
             var markerAccum = new Dictionary<string, MarkerData>();
@@ -206,6 +204,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 double totalSelfMs = 0;
                 int totalCalls = 0;
                 long totalGcBytes = 0;
+                int lastFoundFrame = -1;
+                int lastFoundItemId = -1;
 
                 for (int fi = startFrame; fi < lastFrame; fi++)
                 {
@@ -217,8 +217,14 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     if (frameData == null || !frameData.valid) continue;
 
                     double frameSelfMs = 0;
+                    int foundId = -1;
                     FindMarkerDetail(frameData, frameData.GetRootItemID(), markerName,
-                        callers, callees, ref frameSelfMs, ref totalCalls, ref totalGcBytes, null);
+                        callers, callees, ref frameSelfMs, ref totalCalls, ref totalGcBytes, null, ref foundId);
+                    if (foundId >= 0)
+                    {
+                        lastFoundFrame = fi;
+                        lastFoundItemId = foundId;
+                    }
                     perFrameSelfMs.Add(frameSelfMs);
                     totalSelfMs += frameSelfMs;
                 }
@@ -238,6 +244,21 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 var topCallees = callees.Values.OrderByDescending(m => m.SelfTimeMs).Take(10)
                     .Select(m => new { marker = m.Name, self_ms = Math.Round(m.SelfTimeMs, 2), calls = m.Calls, gc_alloc_bytes = m.GcAllocBytes }).ToList();
 
+                // Resolve callstack for the marker if available
+                string callstack = "";
+                if (lastFoundFrame >= 0 && lastFoundItemId >= 0)
+                {
+                    using var csFrame = ProfilerDriver.GetHierarchyFrameDataView(
+                        lastFoundFrame, 0,
+                        HierarchyFrameDataView.ViewModes.MergeSamplesWithTheSameName,
+                        HierarchyFrameDataView.columnSelfTime, false);
+                    if (csFrame != null && csFrame.valid)
+                    {
+                        try { callstack = csFrame.ResolveItemCallstack(lastFoundItemId); }
+                        catch { }
+                    }
+                }
+
                 return new
                 {
                     success = true,
@@ -253,6 +274,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         avg_self_ms = totalCalls > 0 ? Math.Round(totalSelfMs / totalCalls, 3) : 0.0,
                         callers = topCallers,
                         callees = topCallees,
+                        callstack = callstack ?? "",
+                        callstacks_available = !string.IsNullOrEmpty(callstack),
                         play_mode = EditorApplication.isPlaying
                     }
                 };
@@ -266,7 +289,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
         private static void FindMarkerDetail(HierarchyFrameDataView frameData, int itemId, string targetName,
             Dictionary<string, MarkerData> callers, Dictionary<string, MarkerData> callees,
-            ref double frameSelfMs, ref int totalCalls, ref long totalGcBytes, string parentName)
+            ref double frameSelfMs, ref int totalCalls, ref long totalGcBytes, string parentName, ref int foundItemId)
         {
             var children = new List<int>();
             frameData.GetItemChildren(itemId, children);
@@ -284,6 +307,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     frameSelfMs += selfTime;
                     totalCalls += calls;
                     totalGcBytes += (long)gcAlloc;
+                    foundItemId = childId;
 
                     // Record caller (parent)
                     if (!string.IsNullOrEmpty(parentName))
@@ -320,7 +344,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
                 // Continue walking to find deeper instances
                 FindMarkerDetail(frameData, childId, targetName, callers, callees,
-                    ref frameSelfMs, ref totalCalls, ref totalGcBytes, name);
+                    ref frameSelfMs, ref totalCalls, ref totalGcBytes, name, ref foundItemId);
             }
         }
 
@@ -376,16 +400,52 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
                 int gcCollections = GC.CollectionCount(0);
 
-                var topAllocators = markerGc
+                var topMarkerNames = markerGc
                     .Where(kv => kv.Value > 0)
                     .OrderByDescending(kv => kv.Value)
                     .Take(topN)
-                    .Select(kv => new
+                    .Select(kv => kv.Key)
+                    .ToList();
+
+                // Resolve callstacks for top 3 allocators
+                var markerCallstacks = new Dictionary<string, string>();
+                bool anyCallstacks = false;
+                foreach (string targetMarker in topMarkerNames.Take(3))
+                {
+                    for (int fi = lastFrame - 1; fi >= startFrame; fi--)
                     {
-                        marker = kv.Key,
-                        total_bytes = kv.Value,
-                        total_kb = Math.Round(kv.Value / 1024.0, 1),
-                        pct = totalGcBytes > 0 ? Math.Round((double)kv.Value / totalGcBytes * 100, 1) : 0.0
+                        using var csFrame = ProfilerDriver.GetHierarchyFrameDataView(
+                            fi, 0,
+                            HierarchyFrameDataView.ViewModes.MergeSamplesWithTheSameName,
+                            HierarchyFrameDataView.columnGcMemory, false);
+                        if (csFrame == null || !csFrame.valid) continue;
+
+                        int itemId = FindMarkerItemId(csFrame, csFrame.GetRootItemID(), targetMarker);
+                        if (itemId >= 0)
+                        {
+                            try
+                            {
+                                string cs = csFrame.ResolveItemCallstack(itemId);
+                                if (!string.IsNullOrEmpty(cs))
+                                {
+                                    markerCallstacks[targetMarker] = cs;
+                                    anyCallstacks = true;
+                                }
+                            }
+                            catch { }
+                            break;
+                        }
+                    }
+                }
+
+                var topAllocators = topMarkerNames
+                    .Select(name => new
+                    {
+                        marker = name,
+                        total_bytes = markerGc[name],
+                        total_kb = Math.Round(markerGc[name] / 1024.0, 1),
+                        pct = totalGcBytes > 0 ? Math.Round((double)markerGc[name] / totalGcBytes * 100, 1) : 0.0,
+                        callstack = markerCallstacks.TryGetValue(name, out var cs) ? cs : ""
                     })
                     .ToList();
 
@@ -410,6 +470,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         gc_collections = gcCollections,
                         top_allocators = topAllocators,
                         worst_frames = worstFrames,
+                        callstacks_available = anyCallstacks,
                         play_mode = EditorApplication.isPlaying
                     }
                 };
@@ -419,6 +480,20 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 if (!wasEnabled)
                     UnityEngine.Profiling.Profiler.enabled = false;
             }
+        }
+
+        private static int FindMarkerItemId(HierarchyFrameDataView frameData, int itemId, string targetName)
+        {
+            var children = new List<int>();
+            frameData.GetItemChildren(itemId, children);
+            foreach (int childId in children)
+            {
+                if (string.Equals(frameData.GetItemName(childId), targetName, StringComparison.OrdinalIgnoreCase))
+                    return childId;
+                int found = FindMarkerItemId(frameData, childId, targetName);
+                if (found >= 0) return found;
+            }
+            return -1;
         }
 
         private static void WalkGcHierarchy(HierarchyFrameDataView frameData, int itemId,
@@ -473,6 +548,52 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 // Recurse into children
                 WalkHierarchy(frameData, childId, accum);
             }
+        }
+
+        // === threads_list ===
+
+        internal static object ThreadsList(JObject @params)
+        {
+            int lastFrame = ProfilerDriver.lastFrameIndex;
+            if (lastFrame <= 0)
+            {
+                return new
+                {
+                    success = true,
+                    message = "No profiler frames available. Enable the profiler and collect some frames first.",
+                    data = new { threads = new object[0], play_mode = EditorApplication.isPlaying }
+                };
+            }
+
+            var threads = new List<object>();
+            for (int threadIndex = 0; threadIndex < 64; threadIndex++)
+            {
+                using var frameData = ProfilerDriver.GetHierarchyFrameDataView(
+                    lastFrame, threadIndex,
+                    HierarchyFrameDataView.ViewModes.MergeSamplesWithTheSameName,
+                    HierarchyFrameDataView.columnSelfTime, false);
+
+                if (frameData == null || !frameData.valid) break;
+
+                threads.Add(new
+                {
+                    index = threadIndex,
+                    name = frameData.threadName ?? "",
+                    group = frameData.threadGroupName ?? ""
+                });
+            }
+
+            return new
+            {
+                success = true,
+                message = $"{threads.Count} profiled thread(s) found.",
+                data = new
+                {
+                    threads,
+                    frame = lastFrame,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
         }
 
         private sealed class MarkerData

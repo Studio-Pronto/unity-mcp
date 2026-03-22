@@ -21,19 +21,21 @@ FRAME_TIME_ACTIONS = [
 ]
 
 HIERARCHY_ACTIONS = [
-    "hotspots_get", "hotspots_detail", "gc_track",
+    "hotspots_get", "hotspots_detail", "gc_track", "threads_list",
 ]
 
 MEMORY_ACTIONS = [
     "memory_snapshot", "memory_compare", "memory_objects", "memory_type_summary",
+    "memory_fragmentation",
 ]
 
 CAPTURE_ACTIONS = [
-    "capture_start", "capture_stop", "capture_status",
+    "capture_start", "capture_stop", "capture_status", "capture_load",
 ]
 
 CONTROL_ACTIONS = [
     "profiler_enable", "profiler_disable", "deep_profiling_set", "area_set",
+    "profiler_status", "callstacks_set",
 ]
 
 PHYSICS_ACTIONS = [
@@ -66,21 +68,26 @@ ALL_ACTIONS = (
         "render thread, GPU breakdown with bottleneck classification\n\n"
         "CPU HOTSPOTS (HierarchyFrameDataView, auto-enables profiler):\n"
         "- hotspots_get: Top-N expensive markers by self time\n"
-        "- hotspots_detail: Drill into a specific marker's callers/callees\n"
-        "- gc_track: GC allocation tracking with per-marker attribution\n\n"
+        "- hotspots_detail: Drill into a specific marker's callers/callees (includes callstack when available)\n"
+        "- gc_track: GC allocation tracking with per-marker attribution (includes callstacks when available)\n"
+        "- threads_list: List all profiled threads (main, render, workers)\n\n"
         "MEMORY (instant, no profiler needed):\n"
         "- memory_snapshot: Labeled memory snapshot (total/mono/graphics/GC)\n"
         "- memory_compare: Compare two labeled snapshots\n"
         "- memory_objects: Per-object memory by type/name (paged)\n"
-        "- memory_type_summary: Memory grouped by object type\n\n"
+        "- memory_type_summary: Memory grouped by object type\n"
+        "- memory_fragmentation: Heap fragmentation by size bucket\n\n"
         "CAPTURE (.raw files):\n"
         "- capture_start: Start recording to .raw profiler capture file\n"
         "- capture_stop: Stop recording, return file path\n"
-        "- capture_status: Current profiler recording state\n\n"
+        "- capture_status: Current profiler recording state\n"
+        "- capture_load: Load .raw profiler capture for offline analysis\n\n"
         "CONTROL:\n"
         "- profiler_enable/disable: Toggle profiler recording\n"
         "- deep_profiling_set: Toggle deep profiling (significant overhead)\n"
-        "- area_set: Enable/disable specific profiler areas\n\n"
+        "- area_set: Enable/disable specific profiler areas\n"
+        "- profiler_status: Full profiler configuration state (areas, callstacks, buffer)\n"
+        "- callstacks_set: Toggle allocation callstack recording (significant overhead)\n\n"
         "PHYSICS:\n"
         "- physics_get: Self-contained physics counter snapshot"
     ),
@@ -117,9 +124,10 @@ async def manage_profiler(
     search: Annotated[Optional[str], "Filter counters by name substring for counter_list."] = None,
     # Capture
     output_path: Annotated[Optional[str], "File path for .raw capture output."] = None,
+    input_path: Annotated[Optional[str], "File path of .raw capture to load."] = None,
     keep_profiler_enabled: Annotated[Optional[bool], "Keep profiler on after capture_stop."] = None,
     # Control
-    enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set and area_set."] = None,
+    enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set, callstacks_set, and area_set."] = None,
     area: Annotated[Optional[str], "Profiler area name for area_set."] = None,
 ) -> dict[str, Any]:
     action_lower = action.lower()
@@ -142,7 +150,8 @@ async def manage_profiler(
         "min_total_mb": min_total_mb, "max_objects": max_objects,
         "page_size": page_size, "cursor": cursor,
         "category": category, "search": search, "output_path": output_path,
-        "keep_profiler_enabled": keep_profiler_enabled, "enabled": enabled,
+        "input_path": input_path, "keep_profiler_enabled": keep_profiler_enabled,
+        "enabled": enabled,
         "area": area,
     }
     for key, val in param_map.items():

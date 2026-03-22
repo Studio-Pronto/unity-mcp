@@ -110,5 +110,40 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 }
             };
         }
+
+        // === capture_load ===
+
+        internal static object Load(JObject @params)
+        {
+            var p = new ToolParams(@params);
+            string inputPath = p.Get("input_path", "inputPath");
+
+            if (string.IsNullOrEmpty(inputPath))
+                return new ErrorResponse("'input_path' parameter is required for capture_load.");
+
+            string fullPath = Path.GetFullPath(inputPath);
+            if (!File.Exists(fullPath))
+                return new ErrorResponse($"File not found: '{fullPath}'.");
+
+            long sizeBytes = new FileInfo(fullPath).Length;
+
+            UnityEngine.Profiling.Profiler.AddFramesFromFile(fullPath);
+
+            return new
+            {
+                success = true,
+                message = $"Loaded profiler data from: {fullPath} ({Math.Round(sizeBytes / (1024.0 * 1024.0), 2)}MB). Frames appended to profiler buffer.",
+                data = new
+                {
+                    path = fullPath,
+                    size_bytes = sizeBytes,
+                    size_mb = Math.Round(sizeBytes / (1024.0 * 1024.0), 2),
+                    first_frame = ProfilerDriver.firstFrameIndex,
+                    last_frame = ProfilerDriver.lastFrameIndex,
+                    total_frames = ProfilerDriver.lastFrameIndex - ProfilerDriver.firstFrameIndex,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
     }
 }

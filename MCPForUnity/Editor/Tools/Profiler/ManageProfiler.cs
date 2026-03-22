@@ -68,6 +68,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return await HierarchyOps.HotspotsDetail(@params);
                     case "gc_track":
                         return await HierarchyOps.GcTrack(@params);
+                    case "threads_list":
+                        return HierarchyOps.ThreadsList(@params);
 
                     // --- Memory (Profiler.GetTotal*, sync) ---
                     case "memory_snapshot":
@@ -78,6 +80,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return MemoryOps.Objects(@params);
                     case "memory_type_summary":
                         return MemoryOps.TypeSummary(@params);
+                    case "memory_fragmentation":
+                        return MemoryOps.Fragmentation(@params);
 
                     // --- Capture (.raw files, sync) ---
                     case "capture_start":
@@ -86,6 +90,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return CaptureOps.Stop(@params);
                     case "capture_status":
                         return CaptureOps.Status(@params);
+                    case "capture_load":
+                        return CaptureOps.Load(@params);
 
                     // --- Profiler control (sync) ---
                     case "profiler_enable":
@@ -96,6 +102,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return ControlOps.DeepProfilingSet(@params);
                     case "area_set":
                         return ControlOps.AreaSet(@params);
+                    case "profiler_status":
+                        return ControlOps.ProfilerStatus(@params);
+                    case "callstacks_set":
+                        return ControlOps.CallstacksSet(@params);
 
                     // --- Physics (async blocking) ---
                     case "physics_get":
@@ -107,10 +117,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
                             + "sample_start, sample_stop, sample_read, sample_compare, sample_list, "
                             + "counter_read, counter_list, "
                             + "frame_time_get, "
-                            + "hotspots_get, hotspots_detail, gc_track, "
-                            + "memory_snapshot, memory_compare, memory_objects, memory_type_summary, "
-                            + "capture_start, capture_stop, capture_status, "
-                            + "profiler_enable, profiler_disable, deep_profiling_set, area_set, "
+                            + "hotspots_get, hotspots_detail, gc_track, threads_list, "
+                            + "memory_snapshot, memory_compare, memory_objects, memory_type_summary, memory_fragmentation, "
+                            + "capture_start, capture_stop, capture_status, capture_load, "
+                            + "profiler_enable, profiler_disable, deep_profiling_set, area_set, profiler_status, callstacks_set, "
                             + "physics_get");
                 }
             }
