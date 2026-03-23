@@ -1,0 +1,20 @@
+name: Check Unity .meta files
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - MCPForUnity/**
+      - scripts/ensure_meta.py
+      - .github/workflows/check-meta.yml
+  pull_request:
+    paths:
+      - MCPForUnity/**
+
+jobs:
+  check-meta:
+    name: Verify .meta pairing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/ensure_meta.py --all --dry-run

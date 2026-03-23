@@ -168,50 +168,28 @@ cd Server && uv run pytest tests/ -k "test_create_material" -v
 3. Add C# implementation in `MCPForUnity/Editor/Tools/Manage<Domain>.cs` with `[McpForUnityTool]`
 4. Add Python tests in `Server/tests/test_manage_<domain>.py`
 5. Add Unity tests in `TestProjects/UnityMCPTests/Assets/Tests/`
-6. **Add `.meta` files** for every new C# file AND folder (see below)
+6. `.meta` files are auto-generated (see below)
 
-### Unity .meta Files (REQUIRED)
+### Unity .meta Files (Automated)
 
-Every file and folder under `MCPForUnity/` needs a companion `.meta` file or Unity will ignore it. This applies to:
-- New `.cs` files (need a MonoImporter `.meta`)
-- New directories (need a folder `.meta`)
-- New non-code assets (textures, ScriptableObjects, etc.)
+Every file and folder under `MCPForUnity/` needs a companion `.meta` file or Unity will ignore it. This is automated at three levels:
 
-**When to create them:** Any time you create a new file or folder inside `MCPForUnity/`. Forgetting `.meta` files causes Unity to silently ignore the assets with "has no meta file, but it's in an immutable folder" warnings.
+1. **Claude Code hook** — auto-generates `.meta` when you write files under `MCPForUnity/`
+2. **Git pre-commit hook** — catches any missing `.meta` at commit time and auto-stages them
+3. **CI check** — validates `.meta` pairing on push/PR
 
-**How to create them:** Each `.meta` file needs a unique GUID. Use this script from the repo root:
+**Setup (one time per clone):**
 ```bash
-python3 -c "
-import uuid
+git config core.hooksPath .githooks
+```
 
-# For a FOLDER (e.g., MCPForUnity/Editor/Tools/NewFolder.meta):
-FOLDER = '''fileFormatVersion: 2
-guid: {guid}
-folderAsset: yes
-DefaultImporter:
-  externalObjects: {{}}
-  userData:
-  assetBundleName:
-  assetBundleVariant:
-'''
+**Manual generation (if needed):**
+```bash
+# Generate .meta for a specific path and its parent directories
+python3 scripts/ensure_meta.py --hook <<< '{"tool_input": {"file_path": "MCPForUnity/path/to/NewFile.cs"}}'
 
-# For a CS FILE (e.g., MCPForUnity/Editor/Tools/NewFile.cs.meta):
-CS_FILE = '''fileFormatVersion: 2
-guid: {guid}
-MonoImporter:
-  externalObjects: {{}}
-  serializedVersion: 2
-  defaultReferences: []
-  executionOrder: 0
-  icon: {{instanceID: 0}}
-  userData:
-  assetBundleName:
-  assetBundleVariant:
-'''
-
-# Generate one:
-print(CS_FILE.format(guid=uuid.uuid4().hex))
-"
+# Audit all files for missing/orphaned .metas
+python3 scripts/ensure_meta.py --all --dry-run
 ```
 
 **Naming:** The meta file goes next to its asset: `Foo.cs` → `Foo.cs.meta`, `MyFolder/` → `MyFolder.meta`.

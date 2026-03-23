@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__unity",
+      "Edit(reports/**)",
+      "MultiEdit(reports/**)"
+    ],
+    "deny": [
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/ensure_meta.py\" --hook"
+          }
+        ]
+      }
+    ]
+  }
+}

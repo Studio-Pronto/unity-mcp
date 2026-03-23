@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Quick exit: skip if no MCPForUnity/ files are staged
+if ! git diff --cached --name-only -- 'MCPForUnity/' | grep -q .; then
+    exit 0
+fi
+
+if ! command -v python3 &>/dev/null; then
+    echo "ensure_meta: python3 not found — skipping .meta check" >&2
+    exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+python3 "$repo_root/scripts/ensure_meta.py" --staged
