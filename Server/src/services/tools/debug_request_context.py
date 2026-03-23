@@ -59,6 +59,17 @@ async def debug_request_context(ctx: Context) -> dict[str, Any]:
     # Debugging PluginHub state
     plugin_hub_configured = PluginHub.is_configured()
 
+    # Probe list_roots to check client support
+    roots_result = None
+    try:
+        roots = await ctx.list_roots()
+        roots_result = [
+            {"uri": str(getattr(r, "uri", "")), "name": getattr(r, "name", None)}
+            for r in roots
+        ]
+    except Exception as e:
+        roots_result = {"_error": f"{type(e).__name__}: {e}"}
+
     return {
         "success": True,
         "data": {
@@ -83,6 +94,7 @@ async def debug_request_context(ctx: Context) -> dict[str, Any]:
                 "plugin_hub_configured": plugin_hub_configured,
                 "middleware_id": id(middleware),
             },
+            "roots": roots_result,
             "available_attributes": ctx_attrs,
         },
     }
