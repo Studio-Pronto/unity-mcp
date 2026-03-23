@@ -72,13 +72,22 @@ class UnityInstanceMiddleware(Middleware):
         """
         Derive a stable key for the calling session.
 
-        Prioritizes client_id for stability.
-        In remote-hosted mode, falls back to user_id for session isolation.
-        Otherwise falls back to 'global' (assuming single-user local mode).
+        Priority: client_id > session_id > user_id > "global".
+
+        session_id provides per-connection isolation so multiple Claude Code
+        sessions sharing one HTTP server get independent instance routing.
         """
         client_id = getattr(ctx, "client_id", None)
         if isinstance(client_id, str) and client_id:
             return client_id
+
+        # MCP transport session — per-connection isolation
+        try:
+            sid = ctx.session_id
+            if isinstance(sid, str) and sid:
+                return f"session:{sid}"
+        except (RuntimeError, AttributeError):
+            pass
 
         # In remote-hosted mode, use user_id so different users get isolated instance selections
         user_id = await ctx.get_state("user_id")

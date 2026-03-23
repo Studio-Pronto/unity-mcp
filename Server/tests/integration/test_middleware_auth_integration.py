@@ -69,15 +69,17 @@ class TestMiddlewareAuthEnforcement:
 class TestMiddlewareSessionKey:
     @pytest.mark.asyncio
     async def test_get_session_key_uses_user_id_fallback(self):
-        """When no client_id, middleware should use user:$user_id as session key."""
+        """When no client_id or session_id, middleware should use user:$user_id as session key."""
         from transport.unity_instance_middleware import UnityInstanceMiddleware
 
         middleware = UnityInstanceMiddleware()
 
         ctx = DummyContext()
-        # Simulate no client_id attribute
+        # Simulate no client_id or session_id attributes
         if hasattr(ctx, "client_id"):
             delattr(ctx, "client_id")
+        if hasattr(ctx, "session_id"):
+            delattr(ctx, "session_id")
         await ctx.set_state("user_id", "user-77")
 
         key = await middleware.get_session_key(ctx)

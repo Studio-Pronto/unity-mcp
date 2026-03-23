@@ -136,16 +136,72 @@ class TestUnityInstanceMiddlewareSessionManagement:
         assert key == "stable-client-id"
 
     @pytest.mark.asyncio
-    async def test_middleware_falls_back_to_global_key(self):
+    async def test_middleware_uses_session_id_when_no_client_id(self):
         """
-        Current behavior: When client_id is None/missing, use 'global' key.
-        This allows single-user local mode to work without session tracking.
+        When client_id is unavailable, get_session_key() uses the MCP
+        transport session_id for per-connection isolation.
         """
         middleware = UnityInstanceMiddleware()
 
         ctx = Mock()
         ctx.client_id = None
-        ctx.session_id = "session-id"
+        ctx.session_id = "mcp-sess-abc"
+        ctx.get_state = AsyncMock(return_value=None)
+
+        key = await middleware.get_session_key(ctx)
+        assert key == "session:mcp-sess-abc"
+
+    @pytest.mark.asyncio
+    async def test_middleware_session_id_takes_priority_over_user_id(self):
+        """
+        session_id (tier 2) should win over user_id (tier 3) when
+        client_id is absent.
+        """
+        middleware = UnityInstanceMiddleware()
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-abc"
+        ctx.get_state = AsyncMock(return_value="user-77")
+
+        key = await middleware.get_session_key(ctx)
+        assert key == "session:mcp-sess-abc"
+
+    @pytest.mark.asyncio
+    async def test_middleware_isolates_sessions_by_session_id(self):
+        """
+        Two connections with different session_ids (but no client_id)
+        should have independent instance selections.
+        """
+        middleware = UnityInstanceMiddleware()
+
+        ctx1 = Mock()
+        ctx1.client_id = None
+        ctx1.session_id = "sess-1"
+        ctx1.get_state = AsyncMock(return_value=None)
+
+        ctx2 = Mock()
+        ctx2.client_id = None
+        ctx2.session_id = "sess-2"
+        ctx2.get_state = AsyncMock(return_value=None)
+
+        await middleware.set_active_instance(ctx1, "Project1@hash1")
+        await middleware.set_active_instance(ctx2, "Project2@hash2")
+
+        assert await middleware.get_active_instance(ctx1) == "Project1@hash1"
+        assert await middleware.get_active_instance(ctx2) == "Project2@hash2"
+
+    @pytest.mark.asyncio
+    async def test_middleware_falls_back_to_global_key(self):
+        """
+        Current behavior: When client_id and session_id are unavailable,
+        use 'global' key for single-user local mode.
+        """
+        middleware = UnityInstanceMiddleware()
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = None
         ctx.get_state = AsyncMock(return_value=None)
 
         key = await middleware.get_session_key(ctx)
@@ -1600,13 +1656,13 @@ class TestTransportEdgeCases:
     async def test_middleware_handles_client_id_false_but_not_none(self):
         """
         Current behavior: get_session_key checks isinstance(client_id, str) AND len,
-        so falsy non-string values fall through to 'global'.
+        so falsy non-string values fall through to later tiers.
         """
         middleware = UnityInstanceMiddleware()
 
         ctx = Mock()
         ctx.client_id = ""  # Empty string
-        ctx.session_id = "session-id"
+        ctx.session_id = None
         ctx.get_state = AsyncMock(return_value=None)
 
         key = await middleware.get_session_key(ctx)
