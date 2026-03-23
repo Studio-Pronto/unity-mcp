@@ -860,6 +860,126 @@ class TestAutoSelectInstance:
 
 
 # ============================================================================
+# AUTO-SELECT BY PROJECT PATH TESTS
+# ============================================================================
+
+class TestAutoSelectByProjectPath:
+    """Test auto-selection via client root / Unity project path matching."""
+
+    @pytest.mark.asyncio
+    async def test_autoselect_matches_by_project_path(self):
+        """When multiple instances exist, match client root against project_path."""
+        from transport.plugin_registry import PluginRegistry
+
+        middleware = UnityInstanceMiddleware()
+        registry = PluginRegistry()
+        await registry.register("s1", "GameA", "aaa111", "2022.3", project_path="/Users/dev/GameA")
+        await registry.register("s2", "GameB", "bbb222", "2022.3", project_path="/Users/dev/GameB")
+
+        fake_sessions = SessionList(sessions={
+            "s1": SessionDetails(project="GameA", hash="aaa111", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+            "s2": SessionDetails(project="GameB", hash="bbb222", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+        })
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-1"
+        ctx.get_state = AsyncMock(return_value=None)
+        ctx.list_roots = AsyncMock(return_value=[
+            SimpleNamespace(uri="file:///Users/dev/GameA", name="GameA"),
+        ])
+
+        with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=True), \
+             patch("transport.unity_instance_middleware.PluginHub.get_sessions", new_callable=AsyncMock, return_value=fake_sessions), \
+             patch("transport.unity_instance_middleware.PluginHub._registry", registry):
+            instance = await middleware._maybe_autoselect_instance(ctx)
+
+        assert instance == "GameA@aaa111"
+
+    @pytest.mark.asyncio
+    async def test_autoselect_no_path_match_falls_through(self):
+        """When client root doesn't match any project, returns None."""
+        from transport.plugin_registry import PluginRegistry
+
+        middleware = UnityInstanceMiddleware()
+        registry = PluginRegistry()
+        await registry.register("s1", "GameA", "aaa111", "2022.3", project_path="/Users/dev/GameA")
+        await registry.register("s2", "GameB", "bbb222", "2022.3", project_path="/Users/dev/GameB")
+
+        fake_sessions = SessionList(sessions={
+            "s1": SessionDetails(project="GameA", hash="aaa111", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+            "s2": SessionDetails(project="GameB", hash="bbb222", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+        })
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-1"
+        ctx.get_state = AsyncMock(return_value=None)
+        ctx.list_roots = AsyncMock(return_value=[
+            SimpleNamespace(uri="file:///Users/dev/Unrelated", name="Other"),
+        ])
+
+        with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=True), \
+             patch("transport.unity_instance_middleware.PluginHub.get_sessions", new_callable=AsyncMock, return_value=fake_sessions), \
+             patch("transport.unity_instance_middleware.PluginHub._registry", registry):
+            instance = await middleware._maybe_autoselect_instance(ctx)
+
+        assert instance is None
+
+    @pytest.mark.asyncio
+    async def test_autoselect_roots_not_supported_falls_through(self):
+        """When client doesn't support list_roots, falls through gracefully."""
+        middleware = UnityInstanceMiddleware()
+
+        fake_sessions = SessionList(sessions={
+            "s1": SessionDetails(project="GameA", hash="aaa111", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+            "s2": SessionDetails(project="GameB", hash="bbb222", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+        })
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-1"
+        ctx.get_state = AsyncMock(return_value=None)
+        ctx.list_roots = AsyncMock(side_effect=RuntimeError("roots not supported"))
+
+        with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=True), \
+             patch("transport.unity_instance_middleware.PluginHub.get_sessions", new_callable=AsyncMock, return_value=fake_sessions):
+            instance = await middleware._maybe_autoselect_instance(ctx)
+
+        assert instance is None
+
+    @pytest.mark.asyncio
+    async def test_autoselect_subdirectory_match(self):
+        """Client root inside Unity project directory should still match."""
+        from transport.plugin_registry import PluginRegistry
+
+        middleware = UnityInstanceMiddleware()
+        registry = PluginRegistry()
+        await registry.register("s1", "GameA", "aaa111", "2022.3", project_path="/Users/dev/GameA")
+        await registry.register("s2", "GameB", "bbb222", "2022.3", project_path="/Users/dev/GameB")
+
+        fake_sessions = SessionList(sessions={
+            "s1": SessionDetails(project="GameA", hash="aaa111", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+            "s2": SessionDetails(project="GameB", hash="bbb222", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+        })
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-1"
+        ctx.get_state = AsyncMock(return_value=None)
+        ctx.list_roots = AsyncMock(return_value=[
+            SimpleNamespace(uri="file:///Users/dev/GameB/Assets/Scripts", name="Scripts"),
+        ])
+
+        with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=True), \
+             patch("transport.unity_instance_middleware.PluginHub.get_sessions", new_callable=AsyncMock, return_value=fake_sessions), \
+             patch("transport.unity_instance_middleware.PluginHub._registry", registry):
+            instance = await middleware._maybe_autoselect_instance(ctx)
+
+        assert instance == "GameB@bbb222"
+
+
+# ============================================================================
 # PLUGIN REGISTRY TESTS
 # ============================================================================
 

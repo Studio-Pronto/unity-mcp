@@ -233,6 +233,93 @@ class UnityInstanceMiddleware(Middleware):
             "Read mcpforunity://instances for current sessions."
         )
 
+    async def _try_match_by_project_path(self, ctx, sessions: dict) -> str | None:
+        """Match a client's working directory against Unity project paths.
+
+        Uses MCP roots protocol to discover the client's working directories,
+        then compares against project_path from connected Unity sessions.
+        Returns the Name@hash of the matching instance, or None.
+        """
+        try:
+            roots = await ctx.list_roots()
+        except Exception:
+            return None
+        if not roots:
+            return None
+
+        client_paths: list[str] = []
+        for root in roots:
+            uri = str(getattr(root, "uri", ""))
+            if uri.startswith("file://"):
+                client_paths.append(uri[7:])
+        if not client_paths:
+            return None
+
+        registry = PluginHub._registry
+        if not registry:
+            return None
+
+        matches: list[str] = []
+        for session_info in sessions.values():
+            hash_value = getattr(session_info, "hash", None)
+            if not hash_value:
+                continue
+            session_id = await registry.get_session_id_by_hash(hash_value)
+            if not session_id:
+                continue
+            session = await registry.get_session(session_id)
+            if not session or not session.project_path:
+                continue
+
+            project_path = session.project_path.rstrip("/")
+            for client_path in client_paths:
+                normalized = client_path.rstrip("/")
+                if normalized == project_path or normalized.startswith(project_path + "/"):
+                    project = getattr(session_info, "project", None) or "Unknown"
+                    matches.append(f"{project}@{hash_value}")
+                    break
+
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    async def _try_match_stdio_by_path(self, ctx, instances: list) -> str | None:
+        """Match client roots against stdio-discovered Unity instances by path."""
+        try:
+            roots = await ctx.list_roots()
+        except Exception:
+            return None
+        if not roots:
+            return None
+
+        client_paths: list[str] = []
+        for root in roots:
+            uri = str(getattr(root, "uri", ""))
+            if uri.startswith("file://"):
+                client_paths.append(uri[7:])
+        if not client_paths:
+            return None
+
+        matches: list[str] = []
+        for inst in instances:
+            inst_path = getattr(inst, "path", None)
+            inst_id = getattr(inst, "id", None)
+            if not inst_path or not inst_id:
+                continue
+            # Stdio path may include /Assets suffix — strip it for matching
+            project_path = inst_path.rstrip("/")
+            if project_path.endswith("/Assets"):
+                project_path = project_path[:-7]
+            for client_path in client_paths:
+                normalized = client_path.rstrip("/")
+                if normalized == project_path or normalized.startswith(project_path + "/"):
+                    matches.append(inst_id)
+                    break
+
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
     async def _maybe_autoselect_instance(self, ctx) -> str | None:
         """
         Auto-select the sole Unity instance when no active instance is set.
@@ -266,6 +353,11 @@ class UnityInstanceMiddleware(Middleware):
                         )
                         return chosen
                     if len(ids) > 1:
+                        chosen = await self._try_match_by_project_path(ctx, sessions)
+                        if chosen:
+                            await self.set_active_instance(ctx, chosen)
+                            logger.info("Auto-selected Unity instance by project path match: %s", chosen)
+                            return chosen
                         logger.info(
                             "Multiple Unity instances found (%d). Pass unity_instance on any tool call "
                             "or call set_active_instance to choose one. Available: %s",
@@ -304,6 +396,11 @@ class UnityInstanceMiddleware(Middleware):
                         )
                         return chosen
                     if len(ids) > 1:
+                        chosen = await self._try_match_stdio_by_path(ctx, instances)
+                        if chosen:
+                            await self.set_active_instance(ctx, chosen)
+                            logger.info("Auto-selected Unity instance by project path match (stdio): %s", chosen)
+                            return chosen
                         logger.info(
                             "Multiple Unity instances found (%d). Pass unity_instance on any tool call "
                             "or call set_active_instance to choose one. Available: %s",
