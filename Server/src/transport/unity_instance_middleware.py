@@ -242,9 +242,11 @@ class UnityInstanceMiddleware(Middleware):
         """
         try:
             roots = await ctx.list_roots()
-        except Exception:
+        except Exception as exc:
+            logger.debug("list_roots() failed (%s: %s), skipping path match", type(exc).__name__, exc)
             return None
         if not roots:
+            logger.debug("list_roots() returned empty, skipping path match")
             return None
 
         client_paths: list[str] = []
@@ -253,10 +255,14 @@ class UnityInstanceMiddleware(Middleware):
             if uri.startswith("file://"):
                 client_paths.append(uri[7:])
         if not client_paths:
+            logger.debug("No file:// roots found in %s, skipping path match", roots)
             return None
+
+        logger.info("Path match: client roots=%s", client_paths)
 
         registry = PluginHub._registry
         if not registry:
+            logger.debug("No PluginHub registry, skipping path match")
             return None
 
         matches: list[str] = []
@@ -266,12 +272,15 @@ class UnityInstanceMiddleware(Middleware):
                 continue
             session_id = await registry.get_session_id_by_hash(hash_value)
             if not session_id:
+                logger.debug("Path match: no session_id for hash %s", hash_value)
                 continue
             session = await registry.get_session(session_id)
             if not session or not session.project_path:
+                logger.debug("Path match: hash %s has no project_path (session=%s)", hash_value, session is not None)
                 continue
 
             project_path = session.project_path.rstrip("/")
+            logger.info("Path match: comparing client roots against Unity project_path=%s (hash=%s)", project_path, hash_value)
             for client_path in client_paths:
                 normalized = client_path.rstrip("/")
                 if normalized == project_path or normalized.startswith(project_path + "/"):
@@ -279,6 +288,7 @@ class UnityInstanceMiddleware(Middleware):
                     matches.append(f"{project}@{hash_value}")
                     break
 
+        logger.info("Path match: %d matches found: %s", len(matches), matches)
         if len(matches) == 1:
             return matches[0]
         return None
