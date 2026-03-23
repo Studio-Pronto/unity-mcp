@@ -283,7 +283,9 @@ class UnityInstanceMiddleware(Middleware):
             logger.info("Path match: comparing client roots against Unity project_path=%s (hash=%s)", project_path, hash_value)
             for client_path in client_paths:
                 normalized = client_path.rstrip("/")
-                if normalized == project_path or normalized.startswith(project_path + "/"):
+                if (normalized == project_path
+                        or normalized.startswith(project_path + "/")
+                        or project_path.startswith(normalized + "/")):
                     project = getattr(session_info, "project", None) or "Unknown"
                     matches.append(f"{project}@{hash_value}")
                     break
@@ -322,7 +324,9 @@ class UnityInstanceMiddleware(Middleware):
                 project_path = project_path[:-7]
             for client_path in client_paths:
                 normalized = client_path.rstrip("/")
-                if normalized == project_path or normalized.startswith(project_path + "/"):
+                if (normalized == project_path
+                        or normalized.startswith(project_path + "/")
+                        or project_path.startswith(normalized + "/")):
                     matches.append(inst_id)
                     break
 

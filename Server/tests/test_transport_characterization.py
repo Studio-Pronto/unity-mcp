@@ -978,6 +978,36 @@ class TestAutoSelectByProjectPath:
 
         assert instance == "GameB@bbb222"
 
+    @pytest.mark.asyncio
+    async def test_autoselect_parent_directory_match(self):
+        """Client root is parent of Unity project (e.g., repo root vs game/ subfolder)."""
+        from transport.plugin_registry import PluginRegistry
+
+        middleware = UnityInstanceMiddleware()
+        registry = PluginRegistry()
+        await registry.register("s1", "GameA", "aaa111", "2022.3", project_path="/Users/dev/repo1/game")
+        await registry.register("s2", "GameB", "bbb222", "2022.3", project_path="/Users/dev/repo2/game")
+
+        fake_sessions = SessionList(sessions={
+            "s1": SessionDetails(project="GameA", hash="aaa111", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+            "s2": SessionDetails(project="GameB", hash="bbb222", unity_version="2022.3", connected_at="2025-01-01T00:00:00Z"),
+        })
+
+        ctx = Mock()
+        ctx.client_id = None
+        ctx.session_id = "mcp-sess-1"
+        ctx.get_state = AsyncMock(return_value=None)
+        ctx.list_roots = AsyncMock(return_value=[
+            SimpleNamespace(uri="file:///Users/dev/repo1", name="repo1"),
+        ])
+
+        with patch("transport.unity_instance_middleware.PluginHub.is_configured", return_value=True), \
+             patch("transport.unity_instance_middleware.PluginHub.get_sessions", new_callable=AsyncMock, return_value=fake_sessions), \
+             patch("transport.unity_instance_middleware.PluginHub._registry", registry):
+            instance = await middleware._maybe_autoselect_instance(ctx)
+
+        assert instance == "GameA@aaa111"
+
 
 # ============================================================================
 # PLUGIN REGISTRY TESTS
