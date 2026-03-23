@@ -1176,7 +1176,7 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 - `frame_timing_get` — FrameTimingManager-based timing: VSync wait time (`cpu_present_wait_ms`), dynamic resolution scale, CPU/GPU breakdown. Lower overhead than `frame_time_get`. Params: `frames` (default 120)
 
 **CPU Hotspots (HierarchyFrameDataView, auto-enables profiler):**
-- `hotspots_get` — Top-N expensive markers by self time. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all/numeric index)
+- `hotspots_get` — Top-N expensive markers by self time. Returns `object_name` (associated GameObject) per hotspot. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all/numeric index)
 - `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Includes `callstack` and `callstacks_available` when deep profiling or allocation callstacks are enabled. Params: `marker_name`, `frames`
 - `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Includes per-allocator `callstack` when allocation callstacks are enabled. Params: `frames`, `top_n`
 - `threads_list` — List all profiled threads (index, name, group). Use thread index with `hotspots_get` thread param

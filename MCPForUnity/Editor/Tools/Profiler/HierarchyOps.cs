@@ -132,6 +132,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 .Select(m => new
                 {
                     marker = m.Name,
+                    object_name = m.ObjectName,
                     total_ms = Math.Round(m.TotalTimeMs, 2),
                     self_ms = Math.Round(m.SelfTimeMs, 2),
                     calls = m.Calls,
@@ -533,10 +534,11 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 float selfTime = frameData.GetItemColumnDataAsSingle(childId, HierarchyFrameDataView.columnSelfTime);
                 int calls = (int)frameData.GetItemColumnDataAsSingle(childId, HierarchyFrameDataView.columnCalls);
                 float gcAlloc = frameData.GetItemColumnDataAsSingle(childId, HierarchyFrameDataView.columnGcMemory);
+                string objectName = frameData.GetItemColumnData(childId, HierarchyFrameDataView.columnObjectName);
 
                 if (!accum.TryGetValue(name, out var data))
                 {
-                    data = new MarkerData { Name = name };
+                    data = new MarkerData { Name = name, ObjectName = objectName ?? "" };
                     accum[name] = data;
                 }
 
@@ -599,6 +601,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
         private sealed class MarkerData
         {
             public string Name;
+            public string ObjectName;
             public double TotalTimeMs;
             public double SelfTimeMs;
             public int Calls;
