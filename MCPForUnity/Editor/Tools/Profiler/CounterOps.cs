@@ -622,11 +622,11 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 };
             }
 
-            float[] cpuFrame = new float[retrieved];
-            float[] cpuMain = new float[retrieved];
-            float[] cpuPresent = new float[retrieved];
-            float[] cpuRender = new float[retrieved];
-            float[] gpu = new float[retrieved];
+            double[] cpuFrame = new double[retrieved];
+            double[] cpuMain = new double[retrieved];
+            double[] cpuPresent = new double[retrieved];
+            double[] cpuRender = new double[retrieved];
+            double[] gpu = new double[retrieved];
 
             for (int i = 0; i < retrieved; i++)
             {
@@ -637,33 +637,33 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 gpu[i] = timings[i].gpuFrameTime;
             }
 
-            var cpuFrameStats = ComputeFloatStats(cpuFrame, (int)retrieved);
-            var cpuMainStats = ComputeFloatStats(cpuMain, (int)retrieved);
-            var cpuPresentStats = ComputeFloatStats(cpuPresent, (int)retrieved);
-            var cpuRenderStats = ComputeFloatStats(cpuRender, (int)retrieved);
-            var gpuStats = ComputeFloatStats(gpu, (int)retrieved);
+            var cpuFrameStats = ComputeDoubleStats(cpuFrame, (int)retrieved);
+            var cpuMainStats = ComputeDoubleStats(cpuMain, (int)retrieved);
+            var cpuPresentStats = ComputeDoubleStats(cpuPresent, (int)retrieved);
+            var cpuRenderStats = ComputeDoubleStats(cpuRender, (int)retrieved);
+            var gpuStats = ComputeDoubleStats(gpu, (int)retrieved);
 
-            float meanCpuMain = cpuMainStats["mean"];
-            float meanCpuRender = cpuRenderStats["mean"];
-            float meanGpu = gpuStats["mean"];
-            float meanPresent = cpuPresentStats["mean"];
+            double meanCpuMain = cpuMainStats["mean"];
+            double meanCpuRender = cpuRenderStats["mean"];
+            double meanGpu = gpuStats["mean"];
+            double meanPresent = cpuPresentStats["mean"];
 
             string bottleneck;
-            float maxActive = Math.Max(meanCpuMain - meanPresent, meanCpuRender);
-            if (meanGpu > maxActive * 1.1f)
+            double maxActive = Math.Max(meanCpuMain - meanPresent, meanCpuRender);
+            if (meanGpu > maxActive * 1.1)
                 bottleneck = "GPU";
-            else if ((meanCpuMain - meanPresent) > meanCpuRender * 1.1f)
+            else if ((meanCpuMain - meanPresent) > meanCpuRender * 1.1)
                 bottleneck = "CPU (Main Thread)";
-            else if (meanCpuRender > (meanCpuMain - meanPresent) * 1.1f)
+            else if (meanCpuRender > (meanCpuMain - meanPresent) * 1.1)
                 bottleneck = "CPU (Render Thread)";
             else
                 bottleneck = "Balanced";
 
-            float avgFrameTime = cpuFrameStats["mean"];
-            float meanFps = avgFrameTime > 0 ? 1000f / avgFrameTime : 0;
+            double avgFrameTime = cpuFrameStats["mean"];
+            double meanFps = avgFrameTime > 0 ? 1000.0 / avgFrameTime : 0;
 
-            float widthScale = timings[retrieved - 1].widthScale;
-            float heightScale = timings[retrieved - 1].heightScale;
+            double widthScale = timings[retrieved - 1].widthScale;
+            double heightScale = timings[retrieved - 1].heightScale;
 
             return new
             {
@@ -689,25 +689,25 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
         // --- Helpers ---
 
-        private static Dictionary<string, float> ComputeFloatStats(float[] values, int count)
+        private static Dictionary<string, double> ComputeDoubleStats(double[] values, int count)
         {
             if (count == 0)
-                return new Dictionary<string, float> { ["mean"] = 0, ["min"] = 0, ["max"] = 0, ["p95"] = 0, ["p99"] = 0 };
+                return new Dictionary<string, double> { ["mean"] = 0, ["min"] = 0, ["max"] = 0, ["p95"] = 0, ["p99"] = 0 };
 
-            var sorted = new float[count];
+            var sorted = new double[count];
             Array.Copy(values, sorted, count);
             Array.Sort(sorted);
-            float mean = 0;
+            double mean = 0;
             for (int i = 0; i < count; i++) mean += sorted[i];
             mean /= count;
 
-            return new Dictionary<string, float>
+            return new Dictionary<string, double>
             {
-                ["mean"] = (float)Math.Round(mean, 2),
-                ["min"] = (float)Math.Round(sorted[0], 2),
-                ["max"] = (float)Math.Round(sorted[count - 1], 2),
-                ["p95"] = (float)Math.Round(sorted[Math.Min((int)(count * 0.95), count - 1)], 2),
-                ["p99"] = (float)Math.Round(sorted[Math.Min((int)(count * 0.99), count - 1)], 2)
+                ["mean"] = Math.Round(mean, 2),
+                ["min"] = Math.Round(sorted[0], 2),
+                ["max"] = Math.Round(sorted[count - 1], 2),
+                ["p95"] = Math.Round(sorted[Math.Min((int)(count * 0.95), count - 1)], 2),
+                ["p99"] = Math.Round(sorted[Math.Min((int)(count * 0.99), count - 1)], 2)
             };
         }
 
