@@ -54,6 +54,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     // --- Frame time (ProfilerRecorder, async blocking) ---
                     case "frame_time_get":
                         return await CounterOps.FrameTimeGet(@params);
+                    case "frame_timing_get":
+                        return await CounterOps.FrameTimingGet(@params);
 
                     // --- Counter one-shot + discovery ---
                     case "counter_read":
@@ -70,6 +72,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return await HierarchyOps.GcTrack(@params);
                     case "threads_list":
                         return HierarchyOps.ThreadsList(@params);
+                    case "timeline_get":
+                        return TimelineOps.TimelineGet(@params);
+                    case "frame_get":
+                        return FrameOps.FrameGet(@params);
 
                     // --- Memory (Profiler.GetTotal*, sync) ---
                     case "memory_snapshot":
@@ -92,6 +98,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return CaptureOps.Status(@params);
                     case "capture_load":
                         return CaptureOps.Load(@params);
+                    case "capture_save":
+                        return CaptureOps.Save(@params);
 
                     // --- Profiler control (sync) ---
                     case "profiler_enable":
@@ -106,6 +114,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         return ControlOps.ProfilerStatus(@params);
                     case "callstacks_set":
                         return ControlOps.CallstacksSet(@params);
+                    case "gpu_profiling_set":
+                        return ControlOps.GpuProfilingSet(@params);
 
                     // --- Physics (async blocking) ---
                     case "physics_get":
@@ -116,11 +126,11 @@ namespace MCPForUnity.Editor.Tools.Profiler
                             $"Unknown action: '{action}'. Valid actions: ping, "
                             + "sample_start, sample_stop, sample_read, sample_compare, sample_list, "
                             + "counter_read, counter_list, "
-                            + "frame_time_get, "
-                            + "hotspots_get, hotspots_detail, gc_track, threads_list, "
+                            + "frame_time_get, frame_timing_get, "
+                            + "hotspots_get, hotspots_detail, gc_track, threads_list, timeline_get, frame_get, "
                             + "memory_snapshot, memory_compare, memory_objects, memory_type_summary, memory_fragmentation, "
-                            + "capture_start, capture_stop, capture_status, capture_load, "
-                            + "profiler_enable, profiler_disable, deep_profiling_set, area_set, profiler_status, callstacks_set, "
+                            + "capture_start, capture_stop, capture_status, capture_load, capture_save, "
+                            + "profiler_enable, profiler_disable, deep_profiling_set, area_set, profiler_status, callstacks_set, gpu_profiling_set, "
                             + "physics_get");
                 }
             }

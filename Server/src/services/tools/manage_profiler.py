@@ -17,11 +17,12 @@ COUNTER_ACTIONS = [
 ]
 
 FRAME_TIME_ACTIONS = [
-    "frame_time_get",
+    "frame_time_get", "frame_timing_get",
 ]
 
 HIERARCHY_ACTIONS = [
     "hotspots_get", "hotspots_detail", "gc_track", "threads_list",
+    "timeline_get", "frame_get",
 ]
 
 MEMORY_ACTIONS = [
@@ -31,11 +32,12 @@ MEMORY_ACTIONS = [
 
 CAPTURE_ACTIONS = [
     "capture_start", "capture_stop", "capture_status", "capture_load",
+    "capture_save",
 ]
 
 CONTROL_ACTIONS = [
     "profiler_enable", "profiler_disable", "deep_profiling_set", "area_set",
-    "profiler_status", "callstacks_set",
+    "profiler_status", "callstacks_set", "gpu_profiling_set",
 ]
 
 PHYSICS_ACTIONS = [
@@ -65,12 +67,15 @@ ALL_ACTIONS = (
         "- counter_list: List available profiler counters by category\n\n"
         "FRAME TIME:\n"
         "- frame_time_get: Self-contained blocking call. Returns main thread, "
-        "render thread, GPU breakdown with bottleneck classification\n\n"
+        "render thread, GPU breakdown with bottleneck classification\n"
+        "- frame_timing_get: FrameTimingManager-based: VSync wait time, dynamic resolution, CPU/GPU breakdown\n\n"
         "CPU HOTSPOTS (HierarchyFrameDataView, auto-enables profiler):\n"
         "- hotspots_get: Top-N expensive markers by self time\n"
         "- hotspots_detail: Drill into a specific marker's callers/callees (includes callstack when available)\n"
         "- gc_track: GC allocation tracking with per-marker attribution (includes callstacks when available)\n"
-        "- threads_list: List all profiled threads (main, render, workers)\n\n"
+        "- threads_list: List all profiled threads (main, render, workers)\n"
+        "- timeline_get: Per-sample timeline with flow events via RawFrameDataView\n"
+        "- frame_get: Read specific frame data (overview text, counters, timing)\n\n"
         "MEMORY (instant, no profiler needed):\n"
         "- memory_snapshot: Labeled memory snapshot (total/mono/graphics/GC)\n"
         "- memory_compare: Compare two labeled snapshots\n"
@@ -81,13 +86,15 @@ ALL_ACTIONS = (
         "- capture_start: Start recording to .raw profiler capture file\n"
         "- capture_stop: Stop recording, return file path\n"
         "- capture_status: Current profiler recording state\n"
-        "- capture_load: Load .raw profiler capture for offline analysis\n\n"
+        "- capture_load: Load .raw profiler capture for offline analysis\n"
+        "- capture_save: Save profiler buffer to file\n\n"
         "CONTROL:\n"
         "- profiler_enable/disable: Toggle profiler recording\n"
         "- deep_profiling_set: Toggle deep profiling (significant overhead)\n"
         "- area_set: Enable/disable specific profiler areas\n"
         "- profiler_status: Full profiler configuration state (areas, callstacks, buffer)\n"
-        "- callstacks_set: Toggle allocation callstack recording (significant overhead)\n\n"
+        "- callstacks_set: Toggle allocation callstack recording (significant overhead)\n"
+        "- gpu_profiling_set: Toggle GPU profiling with availability check\n\n"
         "PHYSICS:\n"
         "- physics_get: Self-contained physics counter snapshot"
     ),
@@ -110,6 +117,8 @@ async def manage_profiler(
     top_n: Annotated[Optional[int], "Number of top results to return. Default 20."] = None,
     min_ms: Annotated[Optional[float], "Minimum self time (ms) to include. Default 0.1."] = None,
     thread: Annotated[Optional[str], "Thread to analyze: 'main', 'render', or 'all'. Default 'main'."] = None,
+    thread_index: Annotated[Optional[int], "Thread index for timeline_get. Default 0 (main thread)."] = None,
+    frame: Annotated[Optional[int], "Specific frame index for frame_get and timeline_get."] = None,
     marker_name: Annotated[Optional[str], "Specific marker name for hotspots_detail."] = None,
     # Memory
     target: Annotated[Optional[str], "Filter by object name or instance ID."] = None,
@@ -127,7 +136,7 @@ async def manage_profiler(
     input_path: Annotated[Optional[str], "File path of .raw capture to load."] = None,
     keep_profiler_enabled: Annotated[Optional[bool], "Keep profiler on after capture_stop."] = None,
     # Control
-    enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set, callstacks_set, and area_set."] = None,
+    enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set, callstacks_set, gpu_profiling_set, and area_set."] = None,
     area: Annotated[Optional[str], "Profiler area name for area_set."] = None,
 ) -> dict[str, Any]:
     action_lower = action.lower()
@@ -145,7 +154,8 @@ async def manage_profiler(
         "label": label, "counters": counters, "capacity": capacity,
         "last_n": last_n, "label_a": label_a, "label_b": label_b,
         "threshold_pct": threshold_pct, "frames": frames, "top_n": top_n,
-        "min_ms": min_ms, "thread": thread, "marker_name": marker_name,
+        "min_ms": min_ms, "thread": thread, "thread_index": thread_index,
+        "frame": frame, "marker_name": marker_name,
         "target": target, "type": object_type, "min_size_kb": min_size_kb,
         "min_total_mb": min_total_mb, "max_objects": max_objects,
         "page_size": page_size, "cursor": cursor,

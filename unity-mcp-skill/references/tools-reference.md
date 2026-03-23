@@ -1173,12 +1173,15 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 
 **Frame Time:**
 - `frame_time_get` — Self-contained blocking call. Returns main thread, render thread, GPU breakdown with bottleneck classification and 60fps headroom. Params: `frames` (default 120)
+- `frame_timing_get` — FrameTimingManager-based timing: VSync wait time (`cpu_present_wait_ms`), dynamic resolution scale, CPU/GPU breakdown. Lower overhead than `frame_time_get`. Params: `frames` (default 120)
 
 **CPU Hotspots (HierarchyFrameDataView, auto-enables profiler):**
 - `hotspots_get` — Top-N expensive markers by self time. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all/numeric index)
 - `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Includes `callstack` and `callstacks_available` when deep profiling or allocation callstacks are enabled. Params: `marker_name`, `frames`
 - `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Includes per-allocator `callstack` when allocation callstacks are enabled. Params: `frames`, `top_n`
 - `threads_list` — List all profiled threads (index, name, group). Use thread index with `hotspots_get` thread param
+- `timeline_get` — Per-sample timeline for a specific frame via RawFrameDataView. Returns top samples by duration and flow events for async tracing. Params: `frame` (default: latest), `thread_index` (default 0), `top_n` (default 30), `min_ms` (default 0.01)
+- `frame_get` — Read specific frame data: overview text (CPU/GPU/Rendering/Memory), frame timing, FPS. Params: `frame` (default: latest)
 
 **Memory (instant, no profiler needed):**
 - `memory_snapshot` — Labeled memory snapshot (total/mono/graphics/GC). Params: `label` (optional)
@@ -1192,6 +1195,7 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 - `capture_stop` — Stop recording, return file path and size. Params: `keep_profiler_enabled`
 - `capture_status` — Current profiler recording state
 - `capture_load` — Load .raw profiler capture into buffer for offline analysis. Params: `input_path`
+- `capture_save` — Save profiler buffer to .data file. Different from capture_start/stop (which record live). Params: `output_path` (optional, auto-generated)
 
 **Control:**
 - `profiler_enable` — Enable profiler recording
@@ -1200,6 +1204,7 @@ Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, 
 - `area_set` — Enable/disable specific profiler areas. Params: `area`, `enabled`
 - `profiler_status` — Full profiler state: areas, deep profiling, callstacks, buffer, sessions
 - `callstacks_set` — Toggle allocation callstack recording. Params: `enabled`. Significant overhead — disable when done
+- `gpu_profiling_set` — Toggle GPU profiling with availability check. Params: `enabled`. Platform-dependent (D3D11/D3D12/OpenGL)
 
 **Physics:**
 - `physics_get` — Self-contained physics counter snapshot. Params: `frames` (default 120)
@@ -1267,6 +1272,19 @@ manage_profiler(action="memory_fragmentation")
 # List all profiled threads, then analyze a specific worker thread
 manage_profiler(action="threads_list")
 manage_profiler(action="hotspots_get", thread="3", frames=120)
+
+# FrameTimingManager (includes VSync wait time)
+manage_profiler(action="frame_timing_get", frames=120)
+
+# Per-sample timeline for a specific frame
+manage_profiler(action="frame_get", frame=500)
+manage_profiler(action="timeline_get", frame=500, thread_index=0, top_n=20)
+
+# Save profiler buffer for later analysis
+manage_profiler(action="capture_save")
+
+# Enable GPU profiling
+manage_profiler(action="gpu_profiling_set", enabled=True)
 ```
 
 **Resources:**

@@ -173,5 +173,44 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 }
             };
         }
+
+        // === gpu_profiling_set ===
+
+        internal static object GpuProfilingSet(JObject @params)
+        {
+            var p = new ToolParams(@params);
+            if (!p.Has("enabled"))
+                return new ErrorResponse("'enabled' parameter is required for gpu_profiling_set.");
+            bool enabled = p.GetBool("enabled");
+
+            ProfilerDriver.profileGPU = enabled;
+
+            string availabilityNote = "";
+            try
+            {
+                int lastFrame = ProfilerDriver.lastFrameIndex;
+                if (lastFrame > 0)
+                {
+                    var state = ProfilerDriver.GetGpuStatisticsAvailabilityState(lastFrame);
+                    availabilityNote = $" GPU stats state: {state}.";
+                }
+            }
+            catch { }
+
+            string warning = enabled
+                ? " GPU profiling may not be available on all platforms/graphics APIs (requires D3D11/D3D12/OpenGL)."
+                : "";
+
+            return new
+            {
+                success = true,
+                message = $"GPU profiling {(enabled ? "enabled" : "disabled")}.{warning}{availabilityNote}",
+                data = new
+                {
+                    gpu_profiling = enabled,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
     }
 }

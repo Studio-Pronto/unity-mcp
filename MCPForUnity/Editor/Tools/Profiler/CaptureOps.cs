@@ -145,5 +145,49 @@ namespace MCPForUnity.Editor.Tools.Profiler
                 }
             };
         }
+
+        // === capture_save ===
+
+        internal static object Save(JObject @params)
+        {
+            var p = new ToolParams(@params);
+            string outputPath = p.Get("output_path", "outputPath");
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                string dir = Path.Combine(Application.dataPath, "..", "Profiler");
+                Directory.CreateDirectory(dir);
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                outputPath = Path.Combine(dir, $"saved_{timestamp}.data");
+            }
+
+            string fullPath = Path.GetFullPath(outputPath);
+            string parentDir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(parentDir))
+                Directory.CreateDirectory(parentDir);
+
+            ProfilerDriver.SaveProfile(fullPath);
+
+            long sizeBytes = 0;
+            if (File.Exists(fullPath))
+            {
+                try { sizeBytes = new FileInfo(fullPath).Length; }
+                catch { }
+            }
+
+            return new
+            {
+                success = true,
+                message = $"Profiler data saved to: {fullPath} ({Math.Round(sizeBytes / (1024.0 * 1024.0), 2)}MB)",
+                data = new
+                {
+                    path = fullPath,
+                    size_bytes = sizeBytes,
+                    size_mb = Math.Round(sizeBytes / (1024.0 * 1024.0), 2),
+                    frames_saved = ProfilerDriver.lastFrameIndex - ProfilerDriver.firstFrameIndex,
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
     }
 }

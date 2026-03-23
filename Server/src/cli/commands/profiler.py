@@ -389,6 +389,87 @@ def threads_list():
     click.echo(format_output(result, config.format))
 
 
+# --- Frame timing (FrameTimingManager) ---
+
+@profiler.command("frame-timing")
+@click.option("--frames", "-f", type=int, default=None, help="Frames to collect (default 120).")
+@handle_unity_errors
+def frame_timing(frames):
+    """Get frame timing via FrameTimingManager (VSync wait, dynamic resolution)."""
+    config = get_config()
+    params = {"action": "frame_timing_get"}
+    if frames is not None:
+        params["frames"] = frames
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Timeline ---
+
+@profiler.command("timeline")
+@click.option("--frame", type=int, default=None, help="Frame index (default: latest).")
+@click.option("--thread-index", type=int, default=None, help="Thread index (default 0).")
+@click.option("--top-n", "-n", type=int, default=None, help="Top samples by duration (default 30).")
+@click.option("--min-ms", type=float, default=None, help="Min sample duration in ms (default 0.01).")
+@handle_unity_errors
+def timeline(frame, thread_index, top_n, min_ms):
+    """Per-sample timeline with flow events for a specific frame."""
+    config = get_config()
+    params = {"action": "timeline_get"}
+    if frame is not None:
+        params["frame"] = frame
+    if thread_index is not None:
+        params["thread_index"] = thread_index
+    if top_n is not None:
+        params["top_n"] = top_n
+    if min_ms is not None:
+        params["min_ms"] = min_ms
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Frame ---
+
+@profiler.command("frame")
+@click.option("--frame", type=int, default=None, help="Frame index (default: latest).")
+@handle_unity_errors
+def frame_get(frame):
+    """Read specific frame data (overview, counters, timing)."""
+    config = get_config()
+    params = {"action": "frame_get"}
+    if frame is not None:
+        params["frame"] = frame
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- GPU profiling ---
+
+@profiler.command("gpu-profiling")
+@click.option("--enabled/--disabled", required=True, help="Enable or disable GPU profiling.")
+@handle_unity_errors
+def gpu_profiling(enabled):
+    """Toggle GPU profiling (platform-dependent)."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "gpu_profiling_set", "enabled": enabled}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Capture save ---
+
+@profiler.command("capture-save")
+@click.option("--output", "-o", default=None, help="Output path for saved profiler data.")
+@handle_unity_errors
+def capture_save(output):
+    """Save profiler buffer contents to file."""
+    config = get_config()
+    params = {"action": "capture_save"}
+    if output is not None:
+        params["output_path"] = output
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
 # --- Physics ---
 
 @profiler.command("physics")

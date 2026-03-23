@@ -7,6 +7,7 @@ using Newtonsoft.Json.Linq;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel.Unsafe;
 using UnityEditor;
+using UnityEngine;
 
 namespace MCPForUnity.Editor.Tools.Profiler
 {
@@ -589,7 +590,126 @@ namespace MCPForUnity.Editor.Tools.Profiler
             };
         }
 
+        // === frame_timing_get (async -- collects frames via FrameTimingManager) ===
+
+        internal static async Task<object> FrameTimingGet(JObject @params)
+        {
+            var p = new ToolParams(@params);
+            int frames = p.GetInt("frames") ?? 120;
+            if (frames < 1) frames = 1;
+            if (frames > 1500) frames = 1500;
+
+            if (!FrameTimingManager.IsFeatureEnabled())
+            {
+                return new ErrorResponse(
+                    "FrameTimingManager is not enabled. It may not be supported on this platform or graphics API. "
+                    + "Use frame_time_get (ProfilerRecorder-based) as an alternative.");
+            }
+
+            await ProfilerHelpers.WaitForFrames(frames);
+
+            FrameTimingManager.CaptureFrameTimings();
+            var timings = new FrameTiming[frames];
+            uint retrieved = FrameTimingManager.GetLatestTimings((uint)frames, timings);
+
+            if (retrieved == 0)
+            {
+                return new
+                {
+                    success = true,
+                    message = "No frame timing data collected. Are you in Play mode?",
+                    data = new { frames_analyzed = 0, play_mode = EditorApplication.isPlaying }
+                };
+            }
+
+            float[] cpuFrame = new float[retrieved];
+            float[] cpuMain = new float[retrieved];
+            float[] cpuPresent = new float[retrieved];
+            float[] cpuRender = new float[retrieved];
+            float[] gpu = new float[retrieved];
+
+            for (int i = 0; i < retrieved; i++)
+            {
+                cpuFrame[i] = timings[i].cpuFrameTime;
+                cpuMain[i] = timings[i].cpuMainThreadFrameTime;
+                cpuPresent[i] = timings[i].cpuMainThreadPresentWaitTime;
+                cpuRender[i] = timings[i].cpuRenderThreadFrameTime;
+                gpu[i] = timings[i].gpuFrameTime;
+            }
+
+            var cpuFrameStats = ComputeFloatStats(cpuFrame, (int)retrieved);
+            var cpuMainStats = ComputeFloatStats(cpuMain, (int)retrieved);
+            var cpuPresentStats = ComputeFloatStats(cpuPresent, (int)retrieved);
+            var cpuRenderStats = ComputeFloatStats(cpuRender, (int)retrieved);
+            var gpuStats = ComputeFloatStats(gpu, (int)retrieved);
+
+            float meanCpuMain = cpuMainStats["mean"];
+            float meanCpuRender = cpuRenderStats["mean"];
+            float meanGpu = gpuStats["mean"];
+            float meanPresent = cpuPresentStats["mean"];
+
+            string bottleneck;
+            float maxActive = Math.Max(meanCpuMain - meanPresent, meanCpuRender);
+            if (meanGpu > maxActive * 1.1f)
+                bottleneck = "GPU";
+            else if ((meanCpuMain - meanPresent) > meanCpuRender * 1.1f)
+                bottleneck = "CPU (Main Thread)";
+            else if (meanCpuRender > (meanCpuMain - meanPresent) * 1.1f)
+                bottleneck = "CPU (Render Thread)";
+            else
+                bottleneck = "Balanced";
+
+            float avgFrameTime = cpuFrameStats["mean"];
+            float meanFps = avgFrameTime > 0 ? 1000f / avgFrameTime : 0;
+
+            float widthScale = timings[retrieved - 1].widthScale;
+            float heightScale = timings[retrieved - 1].heightScale;
+
+            return new
+            {
+                success = true,
+                message = $"FrameTimingManager captured {retrieved} frames. Bottleneck: {bottleneck}.",
+                data = new
+                {
+                    frames_analyzed = (int)retrieved,
+                    cpu_frame_ms = cpuFrameStats,
+                    cpu_main_thread_ms = cpuMainStats,
+                    cpu_present_wait_ms = cpuPresentStats,
+                    cpu_render_thread_ms = cpuRenderStats,
+                    gpu_ms = gpuStats,
+                    fps = new { mean = Math.Round(meanFps, 1) },
+                    bottleneck,
+                    budget_60fps_ms = 16.67,
+                    headroom_ms = Math.Round(16.67 - avgFrameTime, 2),
+                    dynamic_resolution = new { width_scale = Math.Round(widthScale, 3), height_scale = Math.Round(heightScale, 3) },
+                    play_mode = EditorApplication.isPlaying
+                }
+            };
+        }
+
         // --- Helpers ---
+
+        private static Dictionary<string, float> ComputeFloatStats(float[] values, int count)
+        {
+            if (count == 0)
+                return new Dictionary<string, float> { ["mean"] = 0, ["min"] = 0, ["max"] = 0, ["p95"] = 0, ["p99"] = 0 };
+
+            var sorted = new float[count];
+            Array.Copy(values, sorted, count);
+            Array.Sort(sorted);
+            float mean = 0;
+            for (int i = 0; i < count; i++) mean += sorted[i];
+            mean /= count;
+
+            return new Dictionary<string, float>
+            {
+                ["mean"] = (float)Math.Round(mean, 2),
+                ["min"] = (float)Math.Round(sorted[0], 2),
+                ["max"] = (float)Math.Round(sorted[count - 1], 2),
+                ["p95"] = (float)Math.Round(sorted[Math.Min((int)(count * 0.95), count - 1)], 2),
+                ["p99"] = (float)Math.Round(sorted[Math.Min((int)(count * 0.99), count - 1)], 2)
+            };
+        }
 
         internal static List<(string name, string category)> ResolveCounters(string countersParam, JObject @params)
         {

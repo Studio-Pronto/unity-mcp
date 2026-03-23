@@ -64,7 +64,7 @@ def test_no_duplicate_actions():
 
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 29
+    assert len(ALL_ACTIONS) == 34
 
 
 def test_sample_actions_count():
@@ -76,11 +76,11 @@ def test_counter_actions_count():
 
 
 def test_frame_time_actions_count():
-    assert len(FRAME_TIME_ACTIONS) == 1
+    assert len(FRAME_TIME_ACTIONS) == 2
 
 
 def test_hierarchy_actions_count():
-    assert len(HIERARCHY_ACTIONS) == 4
+    assert len(HIERARCHY_ACTIONS) == 6
 
 
 def test_memory_actions_count():
@@ -88,11 +88,11 @@ def test_memory_actions_count():
 
 
 def test_capture_actions_count():
-    assert len(CAPTURE_ACTIONS) == 4
+    assert len(CAPTURE_ACTIONS) == 5
 
 
 def test_control_actions_count():
-    assert len(CONTROL_ACTIONS) == 6
+    assert len(CONTROL_ACTIONS) == 7
 
 
 def test_physics_actions_count():
@@ -467,6 +467,74 @@ def test_threads_list_sends_action(mock_unity):
     )
     assert result["success"] is True
     assert mock_unity["params"]["action"] == "threads_list"
+
+
+# ---------------------------------------------------------------------------
+# Frame timing (FrameTimingManager)
+# ---------------------------------------------------------------------------
+
+def test_frame_timing_get_forwards_frames(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="frame_timing_get", frames=60)
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["frames"] == 60
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+def test_timeline_get_forwards_params(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="timeline_get",
+            frame=100, thread_index=2, top_n=20, min_ms=0.05,
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["frame"] == 100
+    assert mock_unity["params"]["thread_index"] == 2
+    assert mock_unity["params"]["top_n"] == 20
+
+
+# ---------------------------------------------------------------------------
+# Frame get
+# ---------------------------------------------------------------------------
+
+def test_frame_get_forwards_frame(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="frame_get", frame=50)
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["frame"] == 50
+
+
+# ---------------------------------------------------------------------------
+# GPU profiling
+# ---------------------------------------------------------------------------
+
+def test_gpu_profiling_set_forwards_enabled(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="gpu_profiling_set", enabled=True)
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Capture save
+# ---------------------------------------------------------------------------
+
+def test_capture_save_forwards_output_path(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="capture_save",
+            output_path="Profiler/saved.data",
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["output_path"] == "Profiler/saved.data"
 
 
 # ---------------------------------------------------------------------------
