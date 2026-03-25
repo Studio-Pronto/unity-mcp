@@ -167,7 +167,7 @@ async def sync_tool_visibility_from_unity(
             len(enabled_tools), len(tools),
         )
 
-        PluginHub._sync_server_tool_visibility(enabled_tools)
+        await PluginHub._sync_server_tool_visibility(enabled_tools)
 
         if notify:
             await PluginHub._notify_mcp_tool_list_changed()

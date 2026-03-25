@@ -143,6 +143,14 @@ class PluginRegistry:
                 for tool in tools:
                     session.tools[tool.name] = tool
 
+    async def get_all_registered_tool_names(self) -> set[str]:
+        """Return the union of tool names registered across all active sessions."""
+        async with self._lock:
+            result: set[str] = set()
+            for session in self._sessions.values():
+                result.update(session.tools.keys())
+            return result
+
     async def get_session(self, session_id: str) -> PluginSession | None:
         """Fetch a session by its ``session_id``."""
 

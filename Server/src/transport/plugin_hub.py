@@ -221,6 +221,7 @@ class PluginHub(WebSocketEndpoint):
         lock = cls._lock
         if lock is None:
             return
+        session_id = None
         async with lock:
             session_id = next(
                 (sid for sid, ws in cls._connections.items() if ws is websocket), None)
@@ -255,6 +256,17 @@ class PluginHub(WebSocketEndpoint):
                     await cls._registry.unregister(session_id)
                 logger.info(
                     f"Plugin session {session_id} disconnected ({close_code})")
+
+        # Re-sync tool visibility outside the hub lock to reflect remaining sessions
+        if session_id:
+            try:
+                await cls._sync_server_tool_visibility()
+                await cls._notify_mcp_tool_list_changed()
+            except Exception:
+                logger.debug(
+                    "Failed to re-sync tool visibility after disconnect",
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Public API
@@ -509,7 +521,7 @@ class PluginHub(WebSocketEndpoint):
 
         # Sync server-level FastMCP visibility so new MCP client sessions
         # (e.g. new Claude Code conversations) see the correct tool set.
-        self._sync_server_tool_visibility(payload.tools)
+        await self._sync_server_tool_visibility()
 
         # Notify any already-connected MCP clients (e.g. CC over stdio) that
         # the tool list has changed so they re-fetch.
@@ -533,7 +545,7 @@ class PluginHub(WebSocketEndpoint):
             )
 
     @classmethod
-    def _sync_server_tool_visibility(cls, registered_tools: list) -> None:
+    async def _sync_server_tool_visibility(cls, registered_tools: list | None = None) -> None:
         """Sync FastMCP server-level tool group visibility to match Unity's state.
 
         When Unity sends ``register_tools``, some groups may have been toggled
@@ -547,6 +559,11 @@ class PluginHub(WebSocketEndpoint):
         transforms for groups that Unity has enabled, effectively overriding
         the startup defaults.  FastMCP processes transforms in order so later
         ``enable`` calls override earlier ``disable`` calls.
+
+        Args:
+            registered_tools: If provided, use this explicit tool list (stdio
+                fallback path).  If None, query the registry for the union of
+                all connected sessions' tools (HTTP multi-instance path).
         """
         mcp = cls._mcp
         if mcp is None:
@@ -555,11 +572,18 @@ class PluginHub(WebSocketEndpoint):
         try:
             from services.registry import get_group_tool_names, TOOL_GROUPS
 
-            registered_names: set[str] = set()
-            for tool in registered_tools:
-                name = getattr(tool, "name", None) if not isinstance(tool, dict) else tool.get("name")
-                if isinstance(name, str) and name:
-                    registered_names.add(name)
+            if registered_tools is not None:
+                # Explicit list (stdio fallback path)
+                registered_names: set[str] = set()
+                for tool in registered_tools:
+                    name = getattr(tool, "name", None) if not isinstance(tool, dict) else tool.get("name")
+                    if isinstance(name, str) and name:
+                        registered_names.add(name)
+            else:
+                # HTTP multi-instance: union of all connected sessions
+                if cls._registry is None:
+                    return
+                registered_names = await cls._registry.get_all_registered_tool_names()
 
             group_tools = get_group_tool_names()
 
@@ -790,6 +814,16 @@ class PluginHub(WebSocketEndpoint):
                 )
 
         logger.debug("Evicted plugin session %s (%s)", session_id, reason)
+
+        # Re-sync tool visibility to reflect remaining sessions
+        try:
+            await cls._sync_server_tool_visibility()
+            await cls._notify_mcp_tool_list_changed()
+        except Exception:
+            logger.debug(
+                "Failed to re-sync tool visibility after eviction",
+                exc_info=True,
+            )
 
     @classmethod
     async def _ensure_live_connection(cls, session_id: str) -> bool:
