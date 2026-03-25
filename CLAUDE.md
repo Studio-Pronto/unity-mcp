@@ -37,7 +37,7 @@ MCP tools call Unity via WebSocket (`send_with_unity_instance`). CLI commands ca
 ### Transport Modes
 
 - **Stdio**: Single-agent only. Separate Python process per client. Legacy TCP bridge to Unity. New connections stomp old ones.
-- **HTTP**: Multi-agent ready. Single shared Python server. WebSocket hub at `/hub/plugin`. Session isolation via `client_id`.
+- **HTTP**: Multi-agent ready. Single shared Python server. WebSocket hub at `/hub/plugin`. Per-session instance routing via `session_id` (fallback chain: `client_id` > `session_id` > `user_id` > `"global"`). Auto-matches Unity instances to Claude sessions by comparing `list_roots()` against Unity project paths.
 
 ## Code Philosophy
 
@@ -70,7 +70,7 @@ from services.registry import mcp_for_unity_tool
 
 @mcp_for_unity_tool(
     description="Does something in Unity.",
-    group="core",  # core (default), vfx, animation, ui, scripting_ext, testing, probuilder
+    group="core",  # core (default), vfx, animation, ui, scripting_ext, testing, probuilder, docs
 )
 async def manage_something(
     ctx: Context,
@@ -156,6 +156,9 @@ cd Server && uv run pytest tests/ -k "test_create_material" -v
 # Unity - open TestProjects/UnityMCPTests in Unity, use Test Runner window
 ```
 
+### How Unity Projects Consume This Package
+Unity projects reference this repo via **git URL** in their `manifest.json` (Unity Package Manager). The Python server is installed via `uvx` from the package. This means **changes to Server/ or MCPForUnity/ must be pushed to the remote** before they take effect in consuming Unity projects. After pushing, update the package in Unity's Package Manager and restart the MCP server.
+
 ### Local Development
 1. Set **Server Source Override** in MCP for Unity Advanced Settings to your local `Server/` path
 2. Enable **Dev Mode** checkbox to force fresh installs
@@ -199,5 +202,5 @@ python3 scripts/ensure_meta.py --all --dry-run
 - Don't add features without tests
 - Don't create helper functions for one-time operations
 - Don't add error handling for scenarios that can't happen
-- Don't commit to `main` directly - branch off `beta` for PRs
+- Don't commit to `main` without running tests first
 - Don't add docstrings/comments to code you didn't change

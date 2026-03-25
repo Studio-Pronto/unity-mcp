@@ -32,7 +32,7 @@ If both are empty, report "Fork is up to date with upstream" and stop.
 
 ### 3. Build summaries
 
-For each branch that has new commits:
+For each branch that has new commits, gather the raw data:
 
 **upstream/main:**
 ```bash
@@ -40,29 +40,29 @@ git log --oneline --no-merges HEAD..upstream/main
 git diff --stat HEAD..upstream/main
 ```
 
-**upstream/beta:**
+**upstream/beta (only what's not already in main):**
 ```bash
-git log --oneline --no-merges HEAD..upstream/beta
-git diff --stat HEAD..upstream/beta
+git log --oneline --no-merges upstream/main..upstream/beta
+git diff --stat upstream/main..upstream/beta
 ```
 
 ### 4. Present results
 
-Show a table for each branch with new commits:
+Read the actual diffs and changed files to understand what changed. Present a **flat bulleted list** of every distinct feature, improvement, or fix. One bullet per change. No grouping by category — just list them. Skip version bumps and chores.
 
 **Format:**
 ```
 ## upstream/main — N commits behind
 
-| Commit | Description |
-|--------|-------------|
-| abc1234 | Add new feature X |
-| def5678 | Fix bug in Y |
+- **manage_build** — new tool for triggering player builds with polling support
+- **LoadSceneAdditive** — duplicate scene check before loading
+- **max_poll_seconds** — polling pipeline now supports timeout for long-running tools
+- **Object references** — restore original ref on incompatible component assignments
 
 Files changed: X files (+A, -B lines)
 ```
 
-Repeat for `upstream/beta` if it also has changes.
+For `upstream/beta`, only show what's beta-only (not already in main). Same format.
 
 ### 5. Highlight areas of concern
 

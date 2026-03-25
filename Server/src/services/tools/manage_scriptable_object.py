@@ -24,7 +24,10 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 
 @mcp_for_unity_tool(
     group="scripting_ext",
-    description="Creates and modifies ScriptableObject assets using Unity SerializedObject property paths.",
+    description=(
+        "Creates and modifies ScriptableObject assets via serialized property patching. "
+        "Supports GUID and path-based object references, array auto-resize, nested properties, and dry-run validation."
+    ),
     annotations=ToolAnnotations(
         title="Manage Scriptable Object",
         destructiveHint=True,

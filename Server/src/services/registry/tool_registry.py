@@ -21,7 +21,7 @@ TOOL_GROUPS: dict[str, str] = {
     "vfx": "Visual effects – VFX Graph, shaders, procedural textures",
     "animation": "Animator control & AnimationClip creation",
     "ui": "UI Toolkit (UXML, USS, UIDocument)",
-    "scripting_ext": "ScriptableObject management",
+    "scripting_ext": "ScriptableObject create/modify — serialized property patching, GUID & path object references, arrays, dry-run validation",
     "testing": "Test runner & async test jobs",
     "probuilder": "ProBuilder 3D modeling – requires com.unity.probuilder package",
 }

@@ -26,6 +26,8 @@ from services.registry import (
     group=None,
     description=(
         "Manage which tool groups are visible in this session. "
+        "Additional capabilities (ScriptableObjects, VFX, animation, UI Toolkit, testing, ProBuilder, docs) "
+        "are in disabled groups — activate them when needed. "
         "Actions: list_groups (show all groups and their status), "
         "activate (enable a group), deactivate (disable a group), "
         "sync (refresh visibility from Unity Editor's toggle states), "

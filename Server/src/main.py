@@ -336,6 +336,12 @@ Menu Items:
 - Use `execute_menu_item` when you have read the menu items resource
 - This lets you interact with Unity's menu system and third-party tools
 
+Extended Tool Groups:
+- Only core tools are visible by default. Additional capabilities live in disabled groups.
+- Use `manage_tools(action="list_groups")` to see all groups, then `manage_tools(action="activate", group="<name>")` to enable.
+- Available groups: docs (Unity API reflection & docs), scripting_ext (ScriptableObject create/modify with GUID/path object references), vfx (VFX Graph, shaders, procedural textures), animation (Animator & AnimationClip), ui (UI Toolkit), testing (test runner), probuilder (3D modeling).
+- When a task involves ScriptableObjects, VFX, animation, UI Toolkit, testing, or ProBuilder, activate the relevant group first.
+
 Unity API Verification (requires 'docs' tool group):
 - When the 'docs' tool group is active, use `unity_reflect` and `unity_docs` to verify Unity API details before answering questions or writing C# code. LLM training data frequently contains incorrect, outdated, or hallucinated Unity APIs.
 - BEFORE answering Unity API questions: search the project's assets (`manage_asset`) and reflect the API (`unity_reflect`) to verify. Do NOT rely on training data alone.
