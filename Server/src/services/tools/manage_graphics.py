@@ -60,7 +60,7 @@ ALL_ACTIONS = (
         "- bake_start, bake_cancel, bake_status, bake_clear, bake_reflection_probe\n"
         "- bake_get_settings, bake_set_settings\n"
         "- bake_create_light_probe_group, bake_create_reflection_probe, bake_set_probe_positions\n\n"
-        "STATS:\n"
+        "STATS (for deeper profiling — CPU hotspots, counter sampling, memory — use manage_profiler):\n"
         "- stats_get: Rendering counters (draw calls, batches, triangles, etc.)\n"
         "- stats_list_counters, stats_set_scene_debug, stats_get_memory\n\n"
         "PIPELINE:\n"
