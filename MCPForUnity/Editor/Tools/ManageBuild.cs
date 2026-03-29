@@ -15,7 +15,7 @@ namespace MCPForUnity.Editor.Tools
     public static class ManageBuild
     {
         private static readonly string[] ValidActions =
-            { "build", "status", "platform", "settings", "scenes", "profiles", "batch", "cancel" };
+            { "build", "status", "platform", "settings", "list_settings", "scenes", "profiles", "batch", "cancel" };
 
         public static object HandleCommand(JObject @params)
         {
@@ -41,6 +41,7 @@ namespace MCPForUnity.Editor.Tools
                     case "status": return HandleStatus(p);
                     case "platform": return HandlePlatform(p);
                     case "settings": return HandleSettings(p);
+                    case "list_settings": return HandleListSettings();
                     case "scenes": return HandleScenes(p);
                     case "profiles": return HandleProfiles(p);
                     case "batch": return HandleBatch(p);
@@ -256,6 +257,14 @@ namespace MCPForUnity.Editor.Tools
             );
         }
 
+        // ── list_settings ──────────────────────────────────────────────
+
+        private static object HandleListSettings()
+        {
+            return new SuccessResponse("Listed all PlayerSettings properties.",
+                BuildSettingsHelper.ListProperties());
+        }
+
         // ── settings ───────────────────────────────────────────────────
 
         private static object HandleSettings(ToolParams p)
@@ -279,7 +288,8 @@ namespace MCPForUnity.Editor.Tools
                 var result = BuildSettingsHelper.ReadProperty(property, namedTarget);
                 if (result == null)
                     return new ErrorResponse(
-                        $"Unknown property '{property}'. Valid: {string.Join(", ", BuildSettingsHelper.ValidProperties)}");
+                        $"Unknown property '{property}'. Well-known: {string.Join(", ", BuildSettingsHelper.WellKnownProperties)}. "
+                        + "Any PlayerSettings property name also works. Use action='list_settings' to discover all.");
                 return new SuccessResponse($"Read {property}.", result);
             }
 

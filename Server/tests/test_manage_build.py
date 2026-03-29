@@ -34,7 +34,7 @@ def mock_unity(monkeypatch):
 # ── action validation ───────────────────────────────────────────────
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 8
+    assert len(ALL_ACTIONS) == 9
 
 
 def test_unknown_action_returns_error(mock_unity):
@@ -227,6 +227,14 @@ def test_cancel_forwards_job_id(mock_unity):
     params = mock_unity["params"]
     assert params["action"] == "cancel"
     assert params["job_id"] == "batch-xyz789"
+
+
+# ── list_settings action ───────────────────────────────────────────
+
+def test_list_settings_forwards_action(mock_unity):
+    asyncio.run(manage_build(SimpleNamespace(), action="list_settings"))
+    params = mock_unity["params"]
+    assert params == {"action": "list_settings"}
 
 
 # ── minimal param forwarding ────────────────────────────────────────

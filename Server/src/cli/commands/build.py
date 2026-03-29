@@ -115,14 +115,17 @@ def settings(property_name: str, value: Optional[str], target: Optional[str]):
     """Read or write player settings.
 
     \b
-    Properties: product_name, company_name, version, bundle_id,
-                scripting_backend, defines, architecture
+    Well-known shortcuts: product_name, company_name, version, bundle_id,
+                          scripting_backend, defines, architecture
+    Any PlayerSettings property also works (e.g. bakeCollisionMeshes).
+    Use 'unity-mcp build list-settings' to discover all.
 
     \b
     Examples:
         unity-mcp build settings product_name
         unity-mcp build settings product_name --value "My Game"
         unity-mcp build settings scripting_backend --value il2cpp --target android
+        unity-mcp build settings bakeCollisionMeshes --value true
     """
     config = get_config()
     params = {"action": "settings", "property": property_name}
@@ -130,6 +133,16 @@ def settings(property_name: str, value: Optional[str], target: Optional[str]):
         params["value"] = value
     if target:
         params["target"] = target
+    result = run_command("manage_build", params, config)
+    click.echo(format_output(result, config.format))
+
+
+@build.command("list-settings")
+@handle_unity_errors
+def list_settings():
+    """List all available PlayerSettings properties."""
+    config = get_config()
+    params = {"action": "list_settings"}
     result = run_command("manage_build", params, config)
     click.echo(format_output(result, config.format))
 

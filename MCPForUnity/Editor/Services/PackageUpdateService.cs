@@ -20,8 +20,8 @@ namespace MCPForUnity.Editor.Services
         private const string CachedBetaVersionKey = EditorPrefKeys.LatestKnownVersion + ".beta";
         private const string LastAssetStoreCheckDateKey = EditorPrefKeys.LastAssetStoreUpdateCheck;
         private const string CachedAssetStoreVersionKey = EditorPrefKeys.LatestKnownAssetStoreVersion;
-        private const string MainPackageJsonUrl = "https://raw.githubusercontent.com/CoplayDev/unity-mcp/main/MCPForUnity/package.json";
-        private const string BetaPackageJsonUrl = "https://raw.githubusercontent.com/CoplayDev/unity-mcp/beta/MCPForUnity/package.json";
+        private const string MainPackageJsonUrl = "https://raw.githubusercontent.com/Studio-Pronto/unity-mcp/main/MCPForUnity/package.json";
+        private const string BetaPackageJsonUrl = "https://raw.githubusercontent.com/Studio-Pronto/unity-mcp/beta/MCPForUnity/package.json";
         private const string AssetStoreVersionUrl = "https://gqoqjkkptwfbkwyssmnj.supabase.co/storage/v1/object/public/coplay-images/assetstoreversion.json";
 
         /// <inheritdoc/>
@@ -102,6 +102,12 @@ namespace MCPForUnity.Editor.Services
 
             cmp = left.Patch.CompareTo(right.Patch);
             if (cmp != 0) return cmp;
+
+            // Fork versions are considered equal to their base version.
+            // e.g. 9.6.2-fork.2 == 9.6.2 (no update), but 9.6.3 > 9.6.2-fork.2 (update).
+            bool leftIsFork = left.IsPrerelease && string.Equals(left.PrereleaseLabel, "fork", StringComparison.OrdinalIgnoreCase);
+            bool rightIsFork = right.IsPrerelease && string.Equals(right.PrereleaseLabel, "fork", StringComparison.OrdinalIgnoreCase);
+            if (leftIsFork || rightIsFork) return 0;
 
             // Stable is newer than prerelease when core version matches.
             if (!left.IsPrerelease && right.IsPrerelease) return 1;

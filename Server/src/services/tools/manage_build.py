@@ -16,6 +16,7 @@ ALL_ACTIONS = [
     "status",
     "platform",
     "settings",
+    "list_settings",
     "scenes",
     "profiles",
     "batch",
@@ -39,7 +40,9 @@ async def _send_build_command(
     description=(
         "Manage Unity player builds — trigger builds, switch platforms, configure settings, "
         "manage build scenes and profiles, run batch builds across platforms. "
-        "Actions: build, status, platform, settings, scenes, profiles, batch, cancel."
+        "settings accepts any PlayerSettings property (e.g. bakeCollisionMeshes, allowUnsafeCode), "
+        "not just the well-known shortcuts. Use list_settings to discover all available properties. "
+        "Actions: build, status, platform, settings, list_settings, scenes, profiles, batch, cancel."
     ),
     annotations=ToolAnnotations(
         title="Manage Build",
@@ -49,7 +52,7 @@ async def _send_build_command(
 )
 async def manage_build(
     ctx: Context,
-    action: Annotated[str, "Action: build, status, platform, settings, scenes, profiles, batch, cancel"],
+    action: Annotated[str, "Action: build, status, platform, settings, list_settings, scenes, profiles, batch, cancel"],
     target: Annotated[Optional[str], "Build target: windows64, osx, linux64, android, ios, webgl, uwp, tvos, visionos"] = None,
     output_path: Annotated[Optional[str], "Output path for the build"] = None,
     scenes: Annotated[Optional[str], "JSON array of scene paths, or comma-separated paths"] = None,
@@ -58,7 +61,7 @@ async def manage_build(
     subtarget: Annotated[Optional[str], "Build subtarget: player or server"] = None,
     scripting_backend: Annotated[Optional[str], "Scripting backend: mono or il2cpp (persistent change)"] = None,
     profile: Annotated[Optional[str], "Build Profile asset path (Unity 6+ only)"] = None,
-    property: Annotated[Optional[str], "Settings property: product_name, company_name, version, bundle_id, scripting_backend, defines, architecture"] = None,
+    property: Annotated[Optional[str], "Settings property name. Well-known shortcuts: product_name, company_name, version, bundle_id, scripting_backend, defines, architecture. Any PlayerSettings property also works (e.g. bakeCollisionMeshes, allowUnsafeCode). Use action='list_settings' to discover all."] = None,
     value: Annotated[Optional[str], "Value to set for the property (omit to read)"] = None,
     activate: Annotated[Optional[str], "Activate a build profile (true/false)"] = None,
     targets: Annotated[Optional[str], "JSON array of targets for batch build"] = None,

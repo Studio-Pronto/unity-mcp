@@ -295,6 +295,10 @@ namespace MCPForUnity.Editor.Tools
                 string normalizedPath = NormalizePropertyPath(propertyPath);
                 string normalizedOp = op.ToLowerInvariant();
 
+                // Treat "set" on ".Array.size" as array_resize for validation and apply.
+                if (normalizedOp == "set" && normalizedPath.EndsWith(".Array.size", StringComparison.Ordinal))
+                    normalizedOp = "array_resize";
+
                 // For array_resize, check if the array exists
                 if (normalizedOp == "array_resize")
                 {
@@ -475,7 +479,8 @@ namespace MCPForUnity.Editor.Tools
                 results.Add(patchResult);
 
                 // Array resize should be applied immediately so later paths resolve.
-                if (string.Equals(op, "array_resize", StringComparison.OrdinalIgnoreCase) && changed)
+                if (changed && (string.Equals(op, "array_resize", StringComparison.OrdinalIgnoreCase)
+                    || propertyPath.EndsWith(".Array.size", StringComparison.OrdinalIgnoreCase)))
                 {
                     so.ApplyModifiedProperties();
                     so.Update();
@@ -500,6 +505,10 @@ namespace MCPForUnity.Editor.Tools
                 // Phase 1.1: Normalize friendly path syntax (e.g., myList[5] → myList.Array.data[5])
                 string normalizedPath = NormalizePropertyPath(propertyPath);
                 string normalizedOp = op.Trim().ToLowerInvariant();
+
+                // Treat "set" on ".Array.size" as array_resize.
+                if (normalizedOp == "set" && normalizedPath.EndsWith(".Array.size", StringComparison.Ordinal))
+                    normalizedOp = "array_resize";
 
                 switch (normalizedOp)
                 {
