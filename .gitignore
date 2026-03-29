@@ -15,6 +15,7 @@ docs/temp/
 __pycache__/
 __pycache__.meta
 build/
+!MCPForUnity/**/Build/
 dist/
 wheels/
 *.egg-info
