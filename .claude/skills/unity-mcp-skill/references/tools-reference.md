@@ -19,6 +19,8 @@ Complete reference for all MCP tools. Each tool includes parameters, types, and 
 - [Graphics Tools](#graphics-tools)
 - [Profiler Tools](#profiler-tools)
 - [Package Tools](#package-tools)
+- [Build Tools](#build-tools)
+- [Project Settings Tools](#project-settings-tools)
 - [ProBuilder Tools](#probuilder-tools)
 - [Docs Tools](#docs-tools)
 
@@ -1486,6 +1488,102 @@ manage_packages(
     url="https://package.openupm.com",
     scopes=["com.cysharp", "com.neuecc"]
 )
+```
+
+---
+
+## Build Tools
+
+### manage_build
+
+Manage Unity player builds — trigger builds, switch platforms, configure settings, manage build scenes and profiles, run batch builds.
+
+**Settings Actions:**
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `settings` | `property`, `value` (optional), `target` (optional) | Read or write a PlayerSettings property. Supports ANY PlayerSettings property via reflection, not just well-known shortcuts |
+| `list_settings` | — | List all available PlayerSettings properties with types and read/write info |
+
+Well-known property shortcuts: `product_name`, `company_name`, `version`, `bundle_id`, `scripting_backend`, `defines`, `architecture`. Any `PlayerSettings` property name also works (e.g. `bakeCollisionMeshes`, `allowUnsafeCode`, `stripEngineCode`).
+
+**Build Actions:**
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `build` | `target`, `output_path`, `scenes`, `development`, `options`, `subtarget`, `scripting_backend`, `profile` | Trigger a player build (async, returns job_id) |
+| `status` | `job_id` (optional) | Poll build status |
+| `platform` | `target` (optional), `subtarget` (optional) | Read current platform or switch active build target |
+| `scenes` | `scenes` (optional) | Read or set the build scene list |
+| `profiles` | `profile` (optional), `activate` (optional) | List or activate build profiles (Unity 6+) |
+| `batch` | `targets` or `profiles`, `output_dir` | Run builds across multiple platforms |
+| `cancel` | `job_id` | Cancel a running build |
+
+**Example — Read any PlayerSettings property:**
+```python
+manage_build(action="settings", property="bakeCollisionMeshes")
+```
+
+**Example — Set any PlayerSettings property:**
+```python
+manage_build(action="settings", property="bakeCollisionMeshes", value="true")
+```
+
+**Example — Discover all available properties:**
+```python
+manage_build(action="list_settings")
+```
+
+**Example — Build for Windows:**
+```python
+manage_build(action="build", target="windows64", development="true")
+manage_build(action="status", job_id="<job_id>")
+```
+
+---
+
+## Project Settings Tools
+
+### manage_project_settings
+
+Read, write, and discover Unity project settings across categories. For PlayerSettings, use manage_build instead.
+
+**Actions:**
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `get` | `category`, `property` | Read a single property value |
+| `set` | `category`, `property`, `value` | Write a property value |
+| `list` | `category` | List all properties for a category with types and read/write info |
+| `list_categories` | — | List all supported categories |
+
+**Categories:** `quality` (QualitySettings), `physics`, `physics2d`, `time`, `editor` (EditorSettings)
+
+**Example — Discover categories:**
+```python
+manage_project_settings(action="list_categories")
+```
+
+**Example — List properties for a category:**
+```python
+manage_project_settings(action="list", category="quality")
+```
+
+**Example — Read a setting:**
+```python
+manage_project_settings(action="get", category="quality", property="streamingMipmapsActive")
+```
+
+**Example — Write scalar settings:**
+```python
+manage_project_settings(action="set", category="quality", property="shadowDistance", value="100")
+manage_project_settings(action="set", category="time", property="fixedDeltaTime", value="0.01")
+manage_project_settings(action="set", category="editor", property="serializationMode", value="ForceText")
+```
+
+**Example — Write vector settings (JSON array):**
+```python
+manage_project_settings(action="set", category="physics", property="gravity", value="[0, -9.81, 0]")
 ```
 
 ---

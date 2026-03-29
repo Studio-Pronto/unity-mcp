@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MCPForUnity.Editor.Constants;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.ProjectAuditor.Editor;
@@ -12,16 +13,46 @@ using UnityEngine;
 
 namespace MCPForUnity.Editor.Tools.ProjectAuditor
 {
+    /// <summary>
+    /// Lightweight snapshot of a ReportItem, decoupled from Unity's Report lifecycle.
+    /// The Report object's internal issue collections become inaccessible after domain
+    /// reloads even when the object itself is freshly loaded. This struct holds the
+    /// data we actually need for queries.
+    /// </summary>
+    internal struct CachedIssue
+    {
+        public string DescriptorId;
+        public string Description;
+        public IssueCategory Category;
+        public Severity Severity;
+        public Areas Areas;
+        public string RelativePath;
+        public string Filename;
+        public int Line;
+    }
+
     internal static class AuditOps
     {
-        private static Report _cachedReport;
+        private static List<CachedIssue> _cachedIssues;
+        private static string _reportDisplayName;
         private static bool _auditInProgress;
         private static DateTime _auditStartTime;
         private static string _auditError;
 
         private const double WatchdogTimeoutSeconds = 300.0; // 5 minutes
 
-        internal static Report CachedReport => _cachedReport;
+        private static readonly string AutosavePath =
+            Path.Combine("Library", "projectauditor-report-autosave.projectauditor");
+
+        internal static List<CachedIssue> CachedIssues
+        {
+            get
+            {
+                if (_cachedIssues == null)
+                    TryRecoverFromDisk();
+                return _cachedIssues;
+            }
+        }
 
         [InitializeOnLoadMethod]
         private static void ResetOnDomainReload()
@@ -85,7 +116,8 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
             _auditInProgress = true;
             _auditStartTime = DateTime.UtcNow;
-            _cachedReport = null;
+            _cachedIssues = null;
+            _reportDisplayName = null;
             _auditError = null;
 
             try
@@ -108,12 +140,19 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
         private static void OnAuditCompleted(Report report)
         {
-            _cachedReport = report;
             _auditInProgress = false;
             _auditError = null;
             UnregisterWatchdog();
+
+            SnapshotReport(report);
+
+            // Save to disk for domain-reload recovery
+            try { report.Save(AutosavePath); }
+            catch (Exception ex) { McpLog.Warn($"[AuditOps] Failed to save report: {ex.Message}"); }
+            EditorPrefs.SetString(EditorPrefKeys.LastAuditReportPath, AutosavePath);
+
             var duration = (DateTime.UtcNow - _auditStartTime).TotalSeconds;
-            McpLog.Info($"[AuditOps] Audit completed: {report.NumTotalIssues} issues in {duration:F1}s");
+            McpLog.Info($"[AuditOps] Audit completed: {_cachedIssues.Count} issues in {duration:F1}s");
         }
 
         // === Watchdog ===
@@ -153,8 +192,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
             if (string.IsNullOrEmpty(path))
             {
-                // Default to autosave
-                path = Path.Combine("Library", "projectauditor-report-autosave.projectauditor");
+                path = AutosavePath;
             }
 
             if (!File.Exists(path))
@@ -164,77 +202,130 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             if (report == null || !string.IsNullOrEmpty(error))
                 return new ErrorResponse($"Failed to load report: {error ?? "unknown error"}");
 
-            _cachedReport = report;
+            SnapshotReport(report);
+            EditorPrefs.SetString(EditorPrefKeys.LastAuditReportPath, path);
+
             return new SuccessResponse(
-                $"Report loaded. {_cachedReport.NumTotalIssues} issues.",
-                Summarize(_cachedReport));
+                $"Report loaded. {_cachedIssues.Count} issues.",
+                SummarizeFromCache());
         }
 
         // === get_summary ===
 
         internal static object GetSummary()
         {
-            if (_cachedReport == null)
+            var issues = CachedIssues;
+            if (issues == null)
                 return new ErrorResponse("No report loaded. Run audit or load_report first.");
 
             return new SuccessResponse(
-                $"Report summary: {_cachedReport.NumTotalIssues} total issues.",
-                Summarize(_cachedReport));
+                $"Report summary: {issues.Count} total issues.",
+                SummarizeFromCache());
         }
 
         // === status ===
 
         internal static object Status()
         {
-            string autosavePath = Path.Combine("Library", "projectauditor-report-autosave.projectauditor");
             int ruleCount = RuleOps.GetRuleCount();
+            var issues = CachedIssues;
 
             return new SuccessResponse(_auditInProgress ? "Audit in progress..." : "Project Auditor ready.", new
             {
                 available = true,
                 unity_version = Application.unityVersion,
-                report_loaded = _cachedReport != null,
-                report_issue_count = _cachedReport?.NumTotalIssues ?? 0,
-                report_display_name = _cachedReport?.DisplayName ?? "",
-                autosave_exists = File.Exists(autosavePath),
+                report_loaded = issues != null,
+                report_issue_count = issues?.Count ?? 0,
+                report_display_name = _reportDisplayName ?? "",
+                autosave_exists = File.Exists(AutosavePath),
                 rule_count = ruleCount,
                 audit_in_progress = _auditInProgress,
                 audit_error = _auditError
             });
         }
 
-        // === Helpers ===
+        // === Snapshot ===
 
-        private static object Summarize(Report report, double? durationSeconds = null)
+        private static void SnapshotReport(Report report)
         {
-            var byCategory = new List<object>();
-            var bySeverity = new Dictionary<string, int>();
-
-            foreach (IssueCategory cat in Enum.GetValues(typeof(IssueCategory)))
-            {
-                if (cat == IssueCategory.Metadata || cat == IssueCategory.FirstCustomCategory)
-                    continue;
-                if (!report.HasCategory(cat))
-                    continue;
-
-                int count = report.GetNumIssues(cat);
-                if (count == 0)
-                    continue;
-
-                byCategory.Add(new { category = cat.ToString(), count });
-            }
+            _reportDisplayName = report.DisplayName ?? "";
+            _cachedIssues = new List<CachedIssue>();
 
             foreach (var item in report.GetAllIssues())
             {
-                string sev = item.Severity.ToString();
-                if (!bySeverity.ContainsKey(sev))
-                    bySeverity[sev] = 0;
-                bySeverity[sev]++;
+                var desc = item.Id.IsValid() ? item.Id.GetDescriptor() : null;
+                _cachedIssues.Add(new CachedIssue
+                {
+                    DescriptorId = item.Id.IsValid() ? item.Id.AsString() : "",
+                    Description = item.Description ?? "",
+                    Category = item.Category,
+                    Severity = item.Severity,
+                    Areas = desc?.Areas ?? Areas.None,
+                    RelativePath = item.RelativePath ?? "",
+                    Filename = item.Filename ?? "",
+                    Line = item.Line
+                });
             }
+        }
+
+        private static void TryRecoverFromDisk()
+        {
+            try
+            {
+                string path = EditorPrefs.GetString(EditorPrefKeys.LastAuditReportPath, "");
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                {
+                    path = AutosavePath;
+                    if (!File.Exists(path))
+                        return;
+                }
+
+                var report = Report.Load(path, out string error);
+                if (report == null || !string.IsNullOrEmpty(error))
+                    return;
+
+                SnapshotReport(report);
+                McpLog.Info($"[AuditOps] Auto-recovered report from {path} ({_cachedIssues.Count} issues).");
+            }
+            catch
+            {
+                // Recovery is best-effort
+            }
+        }
+
+        // === Helpers ===
+
+        private static object SummarizeFromCache(double? durationSeconds = null)
+        {
+            var issues = _cachedIssues;
+            if (issues == null || issues.Count == 0)
+            {
+                return new Dictionary<string, object>
+                {
+                    ["total_issues"] = 0,
+                    ["by_category"] = new List<object>(),
+                    ["by_severity"] = new Dictionary<string, int>()
+                };
+            }
+
+            var byCategory = new List<object>();
+            foreach (var g in issues.GroupBy(i => i.Category))
+            {
+                if (g.Key == IssueCategory.Metadata || g.Key == IssueCategory.FirstCustomCategory)
+                    continue;
+                int count = g.Count();
+                if (count == 0)
+                    continue;
+                byCategory.Add(new { category = g.Key.ToString(), count });
+            }
+
+            var bySeverity = new Dictionary<string, int>();
+            foreach (var g in issues.GroupBy(i => i.Severity))
+                bySeverity[g.Key.ToString()] = g.Count();
 
             var result = new Dictionary<string, object>
             {
-                ["total_issues"] = report.NumTotalIssues,
+                ["total_issues"] = issues.Count,
                 ["by_category"] = byCategory,
                 ["by_severity"] = bySeverity
             };

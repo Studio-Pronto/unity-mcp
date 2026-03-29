@@ -14,24 +14,21 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
         internal static object ListIssues(JObject @params)
         {
-            var report = AuditOps.CachedReport;
-            if (report == null)
+            var issues = AuditOps.CachedIssues;
+            if (issues == null)
                 return new ErrorResponse("No report loaded. Run audit or load_report first.");
 
             var p = new ToolParams(@params);
 
-            // Start with all issues or filter by category
-            IEnumerable<ReportItem> issues;
+            IEnumerable<CachedIssue> filtered = issues;
+
+            // Category filter
             string categoryStr = p.Get("category");
             if (!string.IsNullOrEmpty(categoryStr))
             {
                 if (!ProjectAuditorHelpers.TryParseCategory(categoryStr, out var cat))
                     return new ErrorResponse($"Invalid category: '{categoryStr}'. Use list_categories for valid values.");
-                issues = report.FindByCategory(cat);
-            }
-            else
-            {
-                issues = report.GetAllIssues();
+                filtered = filtered.Where(i => i.Category == cat);
             }
 
             // Severity filter (minimum threshold)
@@ -40,7 +37,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             {
                 if (!ProjectAuditorHelpers.TryParseSeverity(severityStr, out var minSev))
                     return new ErrorResponse($"Invalid severity: '{severityStr}'. Valid: Critical, Error, Major, Moderate, Minor, Warning, Info.");
-                issues = issues.Where(i => i.Severity <= minSev); // Lower enum value = higher severity
+                filtered = filtered.Where(i => i.Severity <= minSev); // Lower enum value = higher severity
             }
 
             // Area filter
@@ -49,26 +46,22 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             {
                 if (!ProjectAuditorHelpers.TryParseArea(areaStr, out var areaFlag))
                     return new ErrorResponse($"Invalid area: '{areaStr}'. Use list_areas for valid values.");
-                issues = issues.Where(i =>
-                {
-                    var desc = i.Id.IsValid() ? i.Id.GetDescriptor() : null;
-                    return desc != null && (desc.Areas & areaFlag) != 0;
-                });
+                filtered = filtered.Where(i => (i.Areas & areaFlag) != 0);
             }
 
             // Path filter
             string pathFilter = p.Get("path_filter", "pathFilter");
             if (!string.IsNullOrEmpty(pathFilter))
-                issues = issues.Where(i => i.RelativePath != null && i.RelativePath.IndexOf(pathFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+                filtered = filtered.Where(i => i.RelativePath.IndexOf(pathFilter, StringComparison.OrdinalIgnoreCase) >= 0);
 
             // Search
             string search = p.Get("search");
             if (!string.IsNullOrEmpty(search))
-                issues = issues.Where(i => i.Description != null && i.Description.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0);
+                filtered = filtered.Where(i => i.Description.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0);
 
             // Materialize for count
-            var filtered = issues.ToList();
-            int totalMatching = filtered.Count;
+            var results = filtered.ToList();
+            int totalMatching = results.Count;
 
             // Pagination
             int pageSize = p.GetInt("page_size") ?? 50;
@@ -76,14 +69,23 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             int cursor = p.GetInt("cursor") ?? 0;
             cursor = Math.Max(cursor, 0);
 
-            var page = filtered.Skip(cursor).Take(pageSize).ToList();
+            var page = results.Skip(cursor).Take(pageSize).ToList();
             int? nextCursor = (cursor + pageSize < totalMatching) ? cursor + pageSize : (int?)null;
 
             return new SuccessResponse(
                 $"Showing issues {cursor + 1}-{cursor + page.Count} of {totalMatching}.",
                 new
                 {
-                    issues = page.Select(ProjectAuditorHelpers.SerializeIssue).ToList(),
+                    issues = page.Select(i => new
+                    {
+                        descriptor_id = string.IsNullOrEmpty(i.DescriptorId) ? null : i.DescriptorId,
+                        description = i.Description,
+                        category = i.Category.ToString(),
+                        severity = i.Severity.ToString(),
+                        filename = i.Filename,
+                        relative_path = i.RelativePath,
+                        line = i.Line
+                    }).ToList(),
                     total_matching = totalMatching,
                     page_size = pageSize,
                     cursor,
@@ -95,8 +97,8 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
         internal static object GetIssueDetail(JObject @params)
         {
-            var report = AuditOps.CachedReport;
-            if (report == null)
+            var issues = AuditOps.CachedIssues;
+            if (issues == null)
                 return new ErrorResponse("No report loaded. Run audit or load_report first.");
 
             var p = new ToolParams(@params);
@@ -109,12 +111,12 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 return new ErrorResponse($"Invalid descriptor ID: '{idStr}'.");
 
             var descriptor = descriptorId.GetDescriptor();
-            var occurrences = report.FindByDescriptorId(idStr);
+            var occurrences = issues.Where(i => i.DescriptorId == idStr).ToList();
 
             // Cap location list for response size
             const int maxLocations = 50;
             var locations = occurrences
-                .Where(i => i.RelativePath != null)
+                .Where(i => !string.IsNullOrEmpty(i.RelativePath))
                 .Take(maxLocations)
                 .Select(i => new { file = i.RelativePath, line = i.Line })
                 .ToList();
