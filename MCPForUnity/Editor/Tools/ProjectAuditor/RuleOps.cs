@@ -1,9 +1,11 @@
 #if UNITY_6000_4_OR_NEWER
 using System.Collections.Generic;
+using System.IO;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.ProjectAuditor.Editor;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 
 namespace MCPForUnity.Editor.Tools.ProjectAuditor
@@ -12,11 +14,19 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
     {
         private const string SettingsPath = "ProjectSettings/ProjectAuditorSettings.asset";
 
+        private static Object LoadSettingsAsset()
+        {
+            if (!File.Exists(SettingsPath))
+                return null;
+            var objects = InternalEditorUtility.LoadSerializedFileAndForget(SettingsPath);
+            return objects != null && objects.Length > 0 ? objects[0] : null;
+        }
+
         // === list_rules ===
 
         internal static object ListRules()
         {
-            var asset = AssetDatabase.LoadAssetAtPath<Object>(SettingsPath);
+            var asset = LoadSettingsAsset();
             if (asset == null)
                 return new SuccessResponse("No ProjectAuditorSettings found.", new { rules = new List<object>(), count = 0 });
 
@@ -57,7 +67,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
             string filter = p.Get("rule_filter", "ruleFilter") ?? "";
 
-            var asset = AssetDatabase.LoadAssetAtPath<Object>(SettingsPath);
+            var asset = LoadSettingsAsset();
             if (asset == null)
                 return new ErrorResponse("ProjectAuditorSettings.asset not found.");
 
@@ -112,7 +122,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
             string filter = p.Get("rule_filter", "ruleFilter") ?? "";
 
-            var asset = AssetDatabase.LoadAssetAtPath<Object>(SettingsPath);
+            var asset = LoadSettingsAsset();
             if (asset == null)
                 return new ErrorResponse("ProjectAuditorSettings.asset not found.");
 
@@ -147,7 +157,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
 
         internal static int GetRuleCount()
         {
-            var asset = AssetDatabase.LoadAssetAtPath<Object>(SettingsPath);
+            var asset = LoadSettingsAsset();
             if (asset == null) return 0;
 
             var so = new SerializedObject(asset);
