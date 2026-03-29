@@ -71,7 +71,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             int totalMatching = filtered.Count;
 
             // Pagination
-            int pageSize = p.GetInt("page_size", "pageSize") ?? 50;
+            int pageSize = p.GetInt("page_size") ?? 50;
             pageSize = Math.Min(Math.Max(pageSize, 1), 200);
             int cursor = p.GetInt("cursor") ?? 0;
             cursor = Math.Max(cursor, 0);
@@ -119,7 +119,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 .Select(i => new { file = i.RelativePath, line = i.Line })
                 .ToList();
 
-            return new SuccessResponse($"Descriptor {idStr}: {occurrences.Length} occurrences.", new
+            return new SuccessResponse($"Descriptor {idStr}: {occurrences.Count} occurrences.", new
             {
                 descriptor_id = idStr,
                 title = descriptor?.Title ?? "",
@@ -128,9 +128,9 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 documentation_url = descriptor?.DocumentationUrl ?? "",
                 areas = descriptor?.Areas.ToString() ?? "",
                 default_severity = descriptor?.DefaultSeverity.ToString() ?? "",
-                occurrences = occurrences.Length,
+                occurrences = occurrences.Count,
                 locations,
-                locations_capped = occurrences.Length > maxLocations
+                locations_capped = occurrences.Count > maxLocations
             });
         }
 

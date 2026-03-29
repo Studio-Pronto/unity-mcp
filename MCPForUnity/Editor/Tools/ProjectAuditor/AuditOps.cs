@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.ProjectAuditor.Editor;
+using Unity.ProjectAuditor.Editor.Core;
 using UnityEditor;
 using UnityEngine;
 
@@ -50,7 +51,9 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                     var cats = ProjectAuditorHelpers.ParseCategories(categoriesStr);
                     if (cats == null)
                         return new ErrorResponse($"Invalid categories: '{categoriesStr}'. Use list_categories for valid values.");
-                    analysisParams.Categories = cats;
+                    analysisParams.Categories = cats
+                        .Select(c => new SerializableEnum<IssueCategory>(c))
+                        .ToArray();
                 }
 
                 // Assembly filter
