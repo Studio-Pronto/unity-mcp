@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MCPForUnity.Editor.Constants;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.ProjectAuditor.Editor;
@@ -31,6 +30,12 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
         public int Line;
     }
 
+    internal class AuditSnapshot
+    {
+        public string DisplayName;
+        public List<CachedIssue> Issues;
+    }
+
     internal static class AuditOps
     {
         private static List<CachedIssue> _cachedIssues;
@@ -40,6 +45,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
         private static string _auditError;
 
         private const double WatchdogTimeoutSeconds = 300.0; // 5 minutes
+        private const string SnapshotToolName = "ProjectAuditor";
 
         private static readonly string AutosavePath =
             Path.Combine("Library", "projectauditor-report-autosave.projectauditor");
@@ -119,6 +125,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             _cachedIssues = null;
             _reportDisplayName = null;
             _auditError = null;
+            McpJobStateStore.ClearState(SnapshotToolName);
 
             try
             {
@@ -145,11 +152,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             UnregisterWatchdog();
 
             SnapshotReport(report);
-
-            // Save to disk for domain-reload recovery
-            try { report.Save(AutosavePath); }
-            catch (Exception ex) { McpLog.Warn($"[AuditOps] Failed to save report: {ex.Message}"); }
-            EditorPrefs.SetString(EditorPrefKeys.LastAuditReportPath, AutosavePath);
+            SaveSnapshotToDisk();
 
             var duration = (DateTime.UtcNow - _auditStartTime).TotalSeconds;
             McpLog.Info($"[AuditOps] Audit completed: {_cachedIssues.Count} issues in {duration:F1}s");
@@ -203,7 +206,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 return new ErrorResponse($"Failed to load report: {error ?? "unknown error"}");
 
             SnapshotReport(report);
-            EditorPrefs.SetString(EditorPrefKeys.LastAuditReportPath, path);
+            SaveSnapshotToDisk();
 
             return new SuccessResponse(
                 $"Report loaded. {_cachedIssues.Count} issues.",
@@ -268,24 +271,34 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             }
         }
 
+        private static void SaveSnapshotToDisk()
+        {
+            if (_cachedIssues == null) return;
+            try
+            {
+                McpJobStateStore.SaveState(SnapshotToolName, new AuditSnapshot
+                {
+                    DisplayName = _reportDisplayName ?? "",
+                    Issues = _cachedIssues
+                });
+            }
+            catch (Exception ex)
+            {
+                McpLog.Warn($"[AuditOps] Failed to save snapshot: {ex.Message}");
+            }
+        }
+
         private static void TryRecoverFromDisk()
         {
             try
             {
-                string path = EditorPrefs.GetString(EditorPrefKeys.LastAuditReportPath, "");
-                if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                {
-                    path = AutosavePath;
-                    if (!File.Exists(path))
-                        return;
-                }
-
-                var report = Report.Load(path, out string error);
-                if (report == null || !string.IsNullOrEmpty(error))
+                var snapshot = McpJobStateStore.LoadState<AuditSnapshot>(SnapshotToolName);
+                if (snapshot?.Issues == null || snapshot.Issues.Count == 0)
                     return;
 
-                SnapshotReport(report);
-                McpLog.Info($"[AuditOps] Auto-recovered report from {path} ({_cachedIssues.Count} issues).");
+                _cachedIssues = snapshot.Issues;
+                _reportDisplayName = snapshot.DisplayName ?? "";
+                McpLog.Info($"[AuditOps] Recovered snapshot ({_cachedIssues.Count} issues).");
             }
             catch
             {
