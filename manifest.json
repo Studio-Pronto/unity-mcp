@@ -118,6 +118,10 @@
       "description": "Create, instantiate, unpack, and modify prefabs"
     },
     {
+      "name": "manage_project_auditor",
+      "description": "Project Auditor static analysis — audit code, assets, shaders, settings; manage suppression rules (Unity 6.4+)"
+    },
+    {
       "name": "manage_probuilder",
       "description": "Create and edit ProBuilder meshes, shapes, and geometry operations"
     },

@@ -24,6 +24,7 @@ TOOL_GROUPS: dict[str, str] = {
     "scripting_ext": "ScriptableObject create/modify — serialized property patching, GUID & path object references, arrays, dry-run validation",
     "testing": "Test runner & async test jobs",
     "probuilder": "ProBuilder 3D modeling – requires com.unity.probuilder package",
+    "auditor": "Project Auditor static analysis – code, assets, shaders, settings (Unity 6.4+)",
 }
 
 DEFAULT_ENABLED_GROUPS: set[str] = {"core"}

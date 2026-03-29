@@ -1339,6 +1339,81 @@ manage_profiler(action="gpu_profiling_set", enabled=True)
 
 ---
 
+## Project Auditor Tools
+
+### manage_project_auditor
+
+**Group: `auditor`** (disabled by default — enable with `manage_tools(action="activate", group="auditor")`). Requires Unity 6.4+.
+
+Unity Project Auditor: static analysis of code, assets, shaders, and project settings. Run audits, browse issues with filtering/pagination, and manage suppression rules.
+
+**Workflow:** `status` → `audit` or `load_report` → `get_summary` → `list_issues` (filtered) → `get_issue_detail` → `add_rule` to suppress.
+
+**Audit Actions:**
+- `audit` — Run analysis (optionally filtered by categories, assemblies, platform)
+- `load_report` — Load autosaved or custom report from disk
+
+**Query Actions:**
+- `get_summary` — Issue counts grouped by category and severity
+- `list_issues` — Filtered + paginated issue listing (by category, severity, area, path, search)
+- `get_issue_detail` — Full descriptor info + occurrence locations for a descriptor ID
+- `list_categories` — All available IssueCategory values
+- `list_areas` — All available Areas flag values
+
+**Rule Actions:**
+- `list_rules` — Current suppression/severity rules
+- `add_rule` — Add a rule (use severity `None` to suppress, or change severity)
+- `remove_rule` — Remove a rule by descriptor ID + optional filter
+
+**Status:**
+- `status` — Availability check, report state, rule count
+
+```python
+# Enable the auditor tool group
+manage_tools(action="activate", group="auditor")
+
+# Check availability
+manage_project_auditor(action="status")
+
+# Run a full audit
+manage_project_auditor(action="audit")
+
+# Run audit filtered to code issues only
+manage_project_auditor(action="audit", categories="Code")
+
+# Load the autosaved report without re-running
+manage_project_auditor(action="load_report")
+
+# Get summary of results
+manage_project_auditor(action="get_summary")
+
+# List code issues with Major+ severity, first page
+manage_project_auditor(action="list_issues", category="Code", severity="Major", page_size=25)
+
+# Next page
+manage_project_auditor(action="list_issues", category="Code", severity="Major", page_size=25, cursor="25")
+
+# Filter by file path
+manage_project_auditor(action="list_issues", path_filter="Assets/Scripts/", search="allocation")
+
+# Get details on a specific descriptor
+manage_project_auditor(action="get_issue_detail", descriptor_id="PAC2000")
+
+# Suppress a noisy diagnostic globally
+manage_project_auditor(action="add_rule", descriptor_id="PAC2000", rule_severity="None")
+
+# Suppress only in third-party code
+manage_project_auditor(action="add_rule", descriptor_id="PAC2000", rule_severity="None", rule_filter="Assets/ThirdParty/")
+
+# Remove a rule
+manage_project_auditor(action="remove_rule", descriptor_id="PAC2000")
+
+# List all rules
+manage_project_auditor(action="list_rules")
+```
+
+---
+
 ## Package Tools
 
 ### manage_packages
