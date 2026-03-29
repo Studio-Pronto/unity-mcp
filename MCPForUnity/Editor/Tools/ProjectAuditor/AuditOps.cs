@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using MCPForUnity.Editor.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.ProjectAuditor.Editor;
@@ -17,84 +16,131 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
     {
         private static Report _cachedReport;
         private static bool _auditInProgress;
+        private static DateTime _auditStartTime;
+        private static string _auditError;
+
+        private const double WatchdogTimeoutSeconds = 300.0; // 5 minutes
 
         internal static Report CachedReport => _cachedReport;
 
         [InitializeOnLoadMethod]
         private static void ResetOnDomainReload()
         {
+            bool wasInProgress = _auditInProgress;
             _auditInProgress = false;
+            UnregisterWatchdog();
+
+            if (wasInProgress)
+            {
+                _auditError = "Audit interrupted by domain reload. Use load_report if autosave exists.";
+                McpLog.Info("[AuditOps] Domain reload during audit. Use load_report to recover results.");
+            }
         }
 
         // === audit ===
 
-        internal static async Task<object> RunAudit(JObject @params)
+        internal static object RunAudit(JObject @params)
         {
             if (_auditInProgress)
                 return new ErrorResponse("Audit already in progress.");
 
+            var p = new ToolParams(@params);
+
+            var analysisParams = new AnalysisParams
+            {
+                OnCompleted = OnAuditCompleted
+            };
+
+            // Category filter
+            string categoriesStr = p.Get("categories");
+            if (!string.IsNullOrEmpty(categoriesStr))
+            {
+                var cats = ProjectAuditorHelpers.ParseCategories(categoriesStr);
+                if (cats == null)
+                    return new ErrorResponse($"Invalid categories: '{categoriesStr}'. Use list_categories for valid values.");
+                analysisParams.Categories = cats
+                    .Select(c => new SerializableEnum<IssueCategory>(c))
+                    .ToArray();
+            }
+
+            // Assembly filter
+            string assembliesStr = p.Get("assemblies");
+            if (!string.IsNullOrEmpty(assembliesStr))
+            {
+                analysisParams.AssemblyNames = assembliesStr
+                    .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .ToArray();
+            }
+
+            // Platform
+            string platformStr = p.Get("platform");
+            if (!string.IsNullOrEmpty(platformStr))
+            {
+                if (Enum.TryParse<BuildTarget>(platformStr, true, out var target))
+                    analysisParams.Platform = target;
+                else
+                    McpLog.Warn($"[AuditOps] Unknown platform '{platformStr}', using active platform.");
+            }
+
             _auditInProgress = true;
+            _auditStartTime = DateTime.UtcNow;
+            _cachedReport = null;
+            _auditError = null;
+
             try
             {
-                var p = new ToolParams(@params);
-                var tcs = new TaskCompletionSource<Report>();
-
-                var analysisParams = new AnalysisParams
-                {
-                    OnCompleted = report => tcs.SetResult(report)
-                };
-
-                // Category filter
-                string categoriesStr = p.Get("categories");
-                if (!string.IsNullOrEmpty(categoriesStr))
-                {
-                    var cats = ProjectAuditorHelpers.ParseCategories(categoriesStr);
-                    if (cats == null)
-                        return new ErrorResponse($"Invalid categories: '{categoriesStr}'. Use list_categories for valid values.");
-                    analysisParams.Categories = cats
-                        .Select(c => new SerializableEnum<IssueCategory>(c))
-                        .ToArray();
-                }
-
-                // Assembly filter
-                string assembliesStr = p.Get("assemblies");
-                if (!string.IsNullOrEmpty(assembliesStr))
-                {
-                    analysisParams.AssemblyNames = assembliesStr
-                        .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => s.Trim())
-                        .ToArray();
-                }
-
-                // Platform
-                string platformStr = p.Get("platform");
-                if (!string.IsNullOrEmpty(platformStr))
-                {
-                    if (Enum.TryParse<BuildTarget>(platformStr, true, out var target))
-                        analysisParams.Platform = target;
-                    else
-                        McpLog.Warn($"[AuditOps] Unknown platform '{platformStr}', using active platform.");
-                }
-
-                var startTime = DateTime.UtcNow;
                 new Unity.ProjectAuditor.Editor.ProjectAuditor().AuditAsync(analysisParams);
-
-                // Timeout after 120s
-                var timeout = Task.Delay(120_000);
-                var completed = await Task.WhenAny(tcs.Task, timeout);
-                if (completed == timeout)
-                    return new ErrorResponse("Audit timed out after 120s. Try filtering by category.");
-
-                _cachedReport = tcs.Task.Result;
-                var duration = (DateTime.UtcNow - startTime).TotalSeconds;
-
-                return new SuccessResponse(
-                    $"Audit completed. {_cachedReport.NumTotalIssues} issues found.",
-                    Summarize(_cachedReport, duration));
             }
-            finally
+            catch (Exception ex)
             {
                 _auditInProgress = false;
+                return new ErrorResponse($"Failed to start audit: {ex.Message}");
+            }
+
+            RegisterWatchdog();
+
+            return new SuccessResponse("Audit started. Poll status to check progress.", new
+            {
+                audit_in_progress = true
+            });
+        }
+
+        private static void OnAuditCompleted(Report report)
+        {
+            _cachedReport = report;
+            _auditInProgress = false;
+            _auditError = null;
+            UnregisterWatchdog();
+            var duration = (DateTime.UtcNow - _auditStartTime).TotalSeconds;
+            McpLog.Info($"[AuditOps] Audit completed: {report.NumTotalIssues} issues in {duration:F1}s");
+        }
+
+        // === Watchdog ===
+
+        private static void RegisterWatchdog()
+        {
+            EditorApplication.update += AuditWatchdog;
+        }
+
+        private static void UnregisterWatchdog()
+        {
+            EditorApplication.update -= AuditWatchdog;
+        }
+
+        private static void AuditWatchdog()
+        {
+            if (!_auditInProgress)
+            {
+                UnregisterWatchdog();
+                return;
+            }
+            if ((DateTime.UtcNow - _auditStartTime).TotalSeconds > WatchdogTimeoutSeconds)
+            {
+                McpLog.Warn("[AuditOps] Audit watchdog: timed out after 5 minutes. Resetting.");
+                _auditInProgress = false;
+                _auditError = "Audit timed out after 5 minutes.";
+                UnregisterWatchdog();
             }
         }
 
@@ -143,7 +189,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
             string autosavePath = Path.Combine("Library", "projectauditor-report-autosave.projectauditor");
             int ruleCount = RuleOps.GetRuleCount();
 
-            return new SuccessResponse("Project Auditor ready.", new
+            return new SuccessResponse(_auditInProgress ? "Audit in progress..." : "Project Auditor ready.", new
             {
                 available = true,
                 unity_version = Application.unityVersion,
@@ -152,7 +198,8 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 report_display_name = _cachedReport?.DisplayName ?? "",
                 autosave_exists = File.Exists(autosavePath),
                 rule_count = ruleCount,
-                audit_in_progress = _auditInProgress
+                audit_in_progress = _auditInProgress,
+                audit_error = _auditError
             });
         }
 

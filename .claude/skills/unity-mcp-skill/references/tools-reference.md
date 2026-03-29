@@ -1375,11 +1375,14 @@ manage_tools(action="activate", group="auditor")
 # Check availability
 manage_project_auditor(action="status")
 
-# Run a full audit
+# Run a full audit (returns immediately — poll status for completion)
 manage_project_auditor(action="audit")
 
 # Run audit filtered to code issues only
 manage_project_auditor(action="audit", categories="Code")
+
+# Poll until audit completes (audit_in_progress: false, report_loaded: true)
+manage_project_auditor(action="status")
 
 # Load the autosaved report without re-running
 manage_project_auditor(action="load_report")

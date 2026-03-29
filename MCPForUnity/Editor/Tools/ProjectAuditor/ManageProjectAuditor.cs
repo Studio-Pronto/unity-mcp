@@ -28,7 +28,7 @@ namespace MCPForUnity.Editor.Tools.ProjectAuditor
                 {
                     // --- Audit ---
                     case "audit":
-                        return await AuditOps.RunAudit(@params);
+                        return AuditOps.RunAudit(@params);
                     case "load_report":
                         return AuditOps.LoadReport(@params);
 
