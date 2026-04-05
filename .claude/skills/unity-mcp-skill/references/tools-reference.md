@@ -360,6 +360,16 @@ manage_components(
 # - {"guid": "...", "spriteName": "SubSprite"}  → Sprite sub-asset from atlas
 # - {"guid": "...", "fileID": 12345}             → Sub-asset by fileID
 # Single-sprite textures auto-resolve from guid/path alone.
+
+# Set LayerMask property (e.g., culling mask, raycast layers)
+manage_components(
+    action="set_property",
+    target="Main Camera",
+    component_type="Camera",
+    property="cullingMask",
+    value=["Default", "UI"]           # layer names (preferred)
+    # value=1                         # or raw integer bitmask
+)
 ```
 
 ---

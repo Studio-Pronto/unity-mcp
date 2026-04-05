@@ -580,6 +580,52 @@ namespace MCPForUnity.Editor.Helpers
                     case SerializedPropertyType.Enum:
                         return SetEnum(prop, value, out error);
 
+                    case SerializedPropertyType.LayerMask:
+                        if (value == null || value.Type == JTokenType.Null)
+                        {
+                            error = "Expected integer or layer name(s) for LayerMask.";
+                            return false;
+                        }
+                        if (value.Type == JTokenType.Integer || value.Type == JTokenType.Float)
+                        {
+                            prop.intValue = ParamCoercion.CoerceInt(value, 0);
+                            return true;
+                        }
+                        if (value is JArray layerArray)
+                        {
+                            var names = new string[layerArray.Count];
+                            for (int i = 0; i < layerArray.Count; i++)
+                            {
+                                string n = layerArray[i]?.ToString();
+                                if (string.IsNullOrEmpty(n))
+                                {
+                                    error = $"LayerMask array element [{i}] is null or empty.";
+                                    return false;
+                                }
+                                if (LayerMask.NameToLayer(n) == -1)
+                                {
+                                    error = $"Invalid layer name '{n}'. Use a valid layer name.";
+                                    return false;
+                                }
+                                names[i] = n;
+                            }
+                            prop.intValue = LayerMask.GetMask(names);
+                            return true;
+                        }
+                        if (value.Type == JTokenType.String)
+                        {
+                            string layerName = value.ToString();
+                            if (LayerMask.NameToLayer(layerName) == -1)
+                            {
+                                error = $"Invalid layer name '{layerName}'. Use a valid layer name.";
+                                return false;
+                            }
+                            prop.intValue = LayerMask.GetMask(layerName);
+                            return true;
+                        }
+                        error = $"LayerMask expects an integer, a layer name string, or an array of layer name strings. Got: {value.Type}.";
+                        return false;
+
                     default:
                         error = $"Unsupported SerializedPropertyType: {prop.propertyType} at '{prop.propertyPath}'.";
                         return false;
