@@ -266,6 +266,47 @@ namespace MCPForUnity.Runtime.Serialization
         }
     }
 
+    public class LayerMaskConverter : JsonConverter<LayerMask>
+    {
+        public override void WriteJson(JsonWriter writer, LayerMask value, JsonSerializer serializer)
+        {
+            writer.WriteValue(value.value);
+        }
+
+        public override LayerMask ReadJson(JsonReader reader, Type objectType, LayerMask existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            JToken token = JToken.Load(reader);
+
+            if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
+                return new LayerMask { value = (int)token };
+
+            if (token is JArray layerArray)
+            {
+                var names = new string[layerArray.Count];
+                for (int i = 0; i < layerArray.Count; i++)
+                {
+                    string n = layerArray[i]?.ToString();
+                    if (string.IsNullOrEmpty(n))
+                        throw new JsonSerializationException($"LayerMask array element [{i}] is null or empty.");
+                    if (LayerMask.NameToLayer(n) == -1)
+                        throw new JsonSerializationException($"Invalid layer name '{n}'. Use a valid layer name.");
+                    names[i] = n;
+                }
+                return new LayerMask { value = LayerMask.GetMask(names) };
+            }
+
+            if (token.Type == JTokenType.String)
+            {
+                string layerName = token.ToString();
+                if (LayerMask.NameToLayer(layerName) == -1)
+                    throw new JsonSerializationException($"Invalid layer name '{layerName}'. Use a valid layer name.");
+                return new LayerMask { value = LayerMask.GetMask(layerName) };
+            }
+
+            throw new JsonSerializationException($"LayerMask expects an integer, a layer name string, or an array of layer name strings. Got: {token.Type}.");
+        }
+    }
+
     // Converter for UnityEngine.Object references (GameObjects, Components, Materials, Textures, etc.)
     public class UnityEngineObjectConverter : JsonConverter<UnityEngine.Object>
     {

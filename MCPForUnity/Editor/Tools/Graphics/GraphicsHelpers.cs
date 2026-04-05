@@ -245,8 +245,33 @@ namespace MCPForUnity.Editor.Tools.Graphics
                         }
                         return false;
                     case SerializedPropertyType.LayerMask:
-                        prop.intValue = ParamCoercion.CoerceInt(value, 0);
-                        return true;
+                        if (value.Type == JTokenType.Integer || value.Type == JTokenType.Float)
+                        {
+                            prop.intValue = ParamCoercion.CoerceInt(value, 0);
+                            return true;
+                        }
+                        if (value is JArray maskArr)
+                        {
+                            var names = new string[maskArr.Count];
+                            for (int i = 0; i < maskArr.Count; i++)
+                            {
+                                string n = maskArr[i]?.ToString();
+                                if (string.IsNullOrEmpty(n) || LayerMask.NameToLayer(n) == -1)
+                                    return false;
+                                names[i] = n;
+                            }
+                            prop.intValue = LayerMask.GetMask(names);
+                            return true;
+                        }
+                        if (value.Type == JTokenType.String)
+                        {
+                            string layerName = value.ToString();
+                            if (LayerMask.NameToLayer(layerName) == -1)
+                                return false;
+                            prop.intValue = LayerMask.GetMask(layerName);
+                            return true;
+                        }
+                        return false;
                     default:
                         return false;
                 }

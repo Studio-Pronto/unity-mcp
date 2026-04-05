@@ -27,6 +27,7 @@ namespace MCPForUnity.Editor.Helpers
                 new RectConverter(),
                 new BoundsConverter(),
                 new Matrix4x4Converter(),
+                new LayerMaskConverter(),
                 new UnityEngineObjectConverter()
             }
         });
