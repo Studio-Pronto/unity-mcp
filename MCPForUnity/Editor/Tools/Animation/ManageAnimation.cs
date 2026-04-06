@@ -13,6 +13,7 @@ namespace MCPForUnity.Editor.Tools.Animation
         private static readonly Dictionary<string, string> ParamAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "clip_path", "clipPath" },
+            { "clip_name", "clipName" },
             { "controller_path", "controllerPath" },
             { "state_name", "stateName" },
             { "from_state", "fromState" },

@@ -72,21 +72,26 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             var state = rootStateMachine.AddState(stateName);
 
-            // Optionally assign a clip
+            // Optionally assign a motion clip
             string clipPath = @params["clipPath"]?.ToString();
             if (!string.IsNullOrEmpty(clipPath))
             {
-                clipPath = AssetPathUtility.SanitizeAssetPath(clipPath);
-                if (clipPath != null)
+                string clipName = @params["clipName"]?.ToString();
+                var (motion, error) = LoadMotionFromPath(clipPath, clipName);
+                if (error != null)
                 {
-                    var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
-                    if (clip != null)
-                        state.motion = clip;
+                    rootStateMachine.RemoveState(state);
+                    return new { success = false, message = error };
                 }
+                state.motion = motion;
             }
 
             float speed = @params["speed"]?.ToObject<float>() ?? 1f;
             state.speed = speed;
+
+            string tag = @params["tag"]?.ToString();
+            if (!string.IsNullOrEmpty(tag))
+                state.tag = tag;
 
             bool isDefault = @params["isDefault"]?.ToObject<bool>() ?? false;
             if (isDefault)
@@ -104,7 +109,9 @@ namespace MCPForUnity.Editor.Tools.Animation
                     stateName,
                     layerIndex,
                     hasMotion = state.motion != null,
+                    motionName = state.motion?.name,
                     speed = state.speed,
+                    tag = state.tag,
                     isDefault
                 }
             };
@@ -403,12 +410,11 @@ namespace MCPForUnity.Editor.Tools.Animation
             Motion motion = null;
             if (!string.IsNullOrEmpty(clipPath))
             {
-                clipPath = AssetPathUtility.SanitizeAssetPath(clipPath);
-                if (clipPath != null)
-                    motion = AssetDatabase.LoadAssetAtPath<Motion>(clipPath);
-
-                if (motion == null)
-                    return new { success = false, message = $"Motion not found at '{@params["clipPath"]}'" };
+                string clipName = @params["clipName"]?.ToString();
+                var (loaded, error) = LoadMotionFromPath(clipPath, clipName);
+                if (error != null)
+                    return new { success = false, message = error };
+                motion = loaded;
             }
 
             targetState.motion = motion;
@@ -976,6 +982,57 @@ namespace MCPForUnity.Editor.Tools.Animation
         {
             string path = @params["controllerPath"]?.ToString() ?? "(not specified)";
             return new { success = false, message = $"AnimatorController not found at '{path}'. Provide a valid 'controllerPath'." };
+        }
+
+        private static (Motion motion, string error) LoadMotionFromPath(string rawClipPath, string clipName)
+        {
+            string clipPath = AssetPathUtility.SanitizeAssetPath(rawClipPath);
+            if (clipPath == null)
+                return (null, $"Invalid asset path '{rawClipPath}'");
+
+            var motion = AssetDatabase.LoadAssetAtPath<Motion>(clipPath);
+            if (motion != null)
+                return (motion, null);
+
+            // Asset exists but main asset isn't a Motion (e.g. FBX) — enumerate sub-assets
+            var allAssets = AssetDatabase.LoadAllAssetsAtPath(clipPath);
+            if (allAssets == null || allAssets.Length == 0)
+                return (null, $"No asset found at '{rawClipPath}'");
+
+            AnimationClip firstClip = null;
+            foreach (var asset in allAssets)
+            {
+                if (!(asset is AnimationClip clip))
+                    continue;
+                if (clip.name.StartsWith("__preview__"))
+                    continue;
+
+                if (!string.IsNullOrEmpty(clipName))
+                {
+                    if (string.Equals(clip.name, clipName, StringComparison.OrdinalIgnoreCase))
+                        return (clip, null);
+                }
+                else if (firstClip == null)
+                {
+                    firstClip = clip;
+                }
+            }
+
+            if (firstClip != null)
+                return (firstClip, null);
+
+            if (!string.IsNullOrEmpty(clipName))
+            {
+                var clipNames = new List<string>();
+                foreach (var asset in allAssets)
+                {
+                    if (asset is AnimationClip c && !c.name.StartsWith("__preview__"))
+                        clipNames.Add(c.name);
+                }
+                return (null, $"Clip '{clipName}' not found in '{rawClipPath}'. Available clips: {string.Join(", ", clipNames)}");
+            }
+
+            return (null, $"No AnimationClip found in '{rawClipPath}'");
         }
 
         private static void CreateFoldersRecursive(string folderPath)

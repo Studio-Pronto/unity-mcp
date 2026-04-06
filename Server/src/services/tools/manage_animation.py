@@ -58,6 +58,7 @@ async def manage_animation(
         "How to find the target GameObject.",
     ] = None,
     clip_path: Annotated[str | None, "Asset path for AnimationClip (e.g. 'Assets/Animations/Walk.anim')."] = None,
+    clip_name: Annotated[str | None, "Name of a specific clip within a multi-clip asset (e.g. FBX). Required when clip_path points to an FBX with multiple animations."] = None,
     controller_path: Annotated[str | None, "Asset path for AnimatorController (e.g. 'Assets/Animators/Player.controller')."] = None,
     properties: Annotated[
         dict[str, Any] | str | None,
@@ -102,6 +103,8 @@ async def manage_animation(
         params_dict["searchMethod"] = search_method
     if clip_path is not None:
         params_dict["clipPath"] = clip_path
+    if clip_name is not None:
+        params_dict["clipName"] = clip_name
     if controller_path is not None:
         params_dict["controllerPath"] = controller_path
 

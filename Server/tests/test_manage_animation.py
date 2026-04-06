@@ -384,6 +384,30 @@ class TestControllerCLICommands:
                 params = _get_params(mock_run)
                 assert params["properties"]["isDefault"] is True
 
+    def test_controller_add_state_with_clip_name(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-state", "Assets/Anim/Player.controller", "GetUp",
+                    "--clip-path", "Assets/Models/Character.fbx",
+                    "--clip-name", "GetUpProne",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["clipPath"] == "Assets/Models/Character.fbx"
+                assert params["clipName"] == "GetUpProne"
+
+    def test_controller_add_state_with_tag(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-state", "Assets/Anim/Player.controller", "GetUp",
+                    "--tag", "GetUp",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["properties"]["tag"] == "GetUp"
+
     def test_controller_add_transition_builds_correct_params(self, runner, mock_config, mock_success):
         with patch("cli.commands.animation.get_config", return_value=mock_config):
             with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
@@ -486,6 +510,19 @@ class TestControllerCLICommands:
                 params = _get_params(mock_run)
                 assert params["action"] == "controller_set_state_motion"
                 assert "clipPath" not in params
+
+    def test_controller_set_state_motion_with_clip_name(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "set-state-motion", "Assets/Anim/Player.controller", "GetUp",
+                    "--clip-path", "Assets/Models/Character.fbx",
+                    "--clip-name", "GetUpProne",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["clipPath"] == "Assets/Models/Character.fbx"
+                assert params["clipName"] == "GetUpProne"
 
     def test_controller_remove_state_builds_correct_params(self, runner, mock_config, mock_success):
         with patch("cli.commands.animation.get_config", return_value=mock_config):

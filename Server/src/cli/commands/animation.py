@@ -11,7 +11,7 @@ from cli.utils.parsers import parse_json_list_or_exit, parse_json_dict_or_exit, 
 from cli.utils.constants import SEARCH_METHOD_CHOICE_BASIC
 
 
-_TOP_LEVEL_KEYS = {"action", "target", "searchMethod", "clipPath", "controllerPath", "properties"}
+_TOP_LEVEL_KEYS = {"action", "target", "searchMethod", "clipPath", "clipName", "controllerPath", "properties"}
 
 
 def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -558,18 +558,22 @@ def controller_create(controller_path: str):
 @controller.command("add-state")
 @click.argument("controller_path")
 @click.argument("state_name")
-@click.option("--clip-path", default=None, help="AnimationClip to assign as motion.")
+@click.option("--clip-path", default=None, help="Motion asset path (AnimationClip, FBX, or BlendTree).")
+@click.option("--clip-name", default=None, help="Clip name within a multi-clip asset (e.g. FBX).")
+@click.option("--tag", default=None, help="State tag.")
 @click.option("--speed", default=1.0, type=float, help="State playback speed.")
 @click.option("--is-default/--no-default", default=False, help="Set as default state.")
 @click.option("--layer-index", default=0, type=int, help="Layer index.")
 @handle_unity_errors
-def controller_add_state(controller_path: str, state_name: str, clip_path: Optional[str], speed: float, is_default: bool, layer_index: int):
+def controller_add_state(controller_path: str, state_name: str, clip_path: Optional[str], clip_name: Optional[str], tag: Optional[str], speed: float, is_default: bool, layer_index: int):
     """Add a state to an AnimatorController.
 
     \b
     Examples:
         unity-mcp animation controller add-state "Assets/Anim/Player.controller" "Walk" \\
             --clip-path "Assets/Anim/Walk.anim"
+        unity-mcp animation controller add-state "Assets/Anim/Player.controller" "GetUp" \\
+            --clip-path "Assets/Models/Character.fbx" --clip-name "GetUpProne"
         unity-mcp animation controller add-state "Assets/Anim/Player.controller" "Idle" --is-default
     """
     config = get_config()
@@ -583,6 +587,10 @@ def controller_add_state(controller_path: str, state_name: str, clip_path: Optio
     }
     if clip_path:
         params["clipPath"] = clip_path
+    if clip_name:
+        params["clipName"] = clip_name
+    if tag:
+        params["tag"] = tag
 
     result = run_command("manage_animation", _normalize_params(params), config)
     click.echo(format_output(result, config.format))
@@ -659,16 +667,19 @@ def controller_add_parameter(controller_path: str, param_name: str, param_type: 
 @controller.command("set-state-motion")
 @click.argument("controller_path")
 @click.argument("state_name")
-@click.option("--clip-path", default=None, help="Motion asset path (AnimationClip or BlendTree). Omit to clear motion.")
+@click.option("--clip-path", default=None, help="Motion asset path (AnimationClip, FBX, or BlendTree). Omit to clear motion.")
+@click.option("--clip-name", default=None, help="Clip name within a multi-clip asset (e.g. FBX).")
 @click.option("--layer-index", default=0, type=int, help="Layer index.")
 @handle_unity_errors
-def controller_set_state_motion(controller_path: str, state_name: str, clip_path: Optional[str], layer_index: int):
+def controller_set_state_motion(controller_path: str, state_name: str, clip_path: Optional[str], clip_name: Optional[str], layer_index: int):
     """Set or clear the motion on an existing animator state.
 
     \b
     Examples:
         unity-mcp animation controller set-state-motion "Assets/Anim/Player.controller" "Walk" \\
             --clip-path "Assets/Anim/Walk.anim"
+        unity-mcp animation controller set-state-motion "Assets/Anim/Player.controller" "GetUp" \\
+            --clip-path "Assets/Models/Character.fbx" --clip-name "GetUpProne"
         unity-mcp animation controller set-state-motion "Assets/Anim/Player.controller" "Idle"
     """
     config = get_config()
@@ -680,6 +691,8 @@ def controller_set_state_motion(controller_path: str, state_name: str, clip_path
     }
     if clip_path:
         params["clipPath"] = clip_path
+    if clip_name:
+        params["clipName"] = clip_name
 
     result = run_command("manage_animation", _normalize_params(params), config)
     click.echo(format_output(result, config.format))
