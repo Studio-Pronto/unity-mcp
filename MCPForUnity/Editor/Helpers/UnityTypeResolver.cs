@@ -54,28 +54,14 @@ namespace MCPForUnity.Editor.Helpers
                 return true;
             }
 
-            // Search loaded assemblies (prefer Player assemblies)
-            var candidates = FindCandidates(typeName, requiredBaseType);
-            if (candidates.Count == 1)
-            {
-                type = candidates[0];
-                Cache(type);
-                return true;
-            }
-            if (candidates.Count > 1)
-            {
-                error = FormatAmbiguityError(typeName, candidates);
-                type = null;
-                return false;
-            }
-
 #if UNITY_EDITOR
-            // Last resort: TypeCache (fast index)
+            // TypeCache: Unity's pre-built native index. No managed reflection,
+            // no assembly loading side effects that can trigger domain reloads.
             if (requiredBaseType != null)
             {
-                var tc = TypeCache.GetTypesDerivedFrom(requiredBaseType)
-                                  .Where(t => NamesMatch(t, typeName));
-                candidates = PreferPlayer(tc).ToList();
+                var candidates = TypeCache.GetTypesDerivedFrom(requiredBaseType)
+                                          .Where(t => NamesMatch(t, typeName))
+                                          .ToList();
                 if (candidates.Count == 1)
                 {
                     type = candidates[0];
@@ -90,6 +76,24 @@ namespace MCPForUnity.Editor.Helpers
                 }
             }
 #endif
+
+            // Fallback: scan loaded assemblies via reflection.
+            // Only reached when requiredBaseType is null (ResolveAny) or TypeCache misses.
+            // Note: Assembly.GetTypes() can trigger lazy assembly loading which may cause
+            // domain reloads — avoid this path for read-only commands when possible.
+            var fallbackCandidates = FindCandidates(typeName, requiredBaseType);
+            if (fallbackCandidates.Count == 1)
+            {
+                type = fallbackCandidates[0];
+                Cache(type);
+                return true;
+            }
+            if (fallbackCandidates.Count > 1)
+            {
+                error = FormatAmbiguityError(typeName, fallbackCandidates);
+                type = null;
+                return false;
+            }
 
             error = $"Type '{typeName}' not found in loaded runtime assemblies. " +
                     "Use a fully-qualified name (Namespace.TypeName) and ensure the script compiled.";
@@ -189,21 +193,6 @@ namespace MCPForUnity.Editor.Helpers
             try { return assembly.GetTypes(); }
             catch (ReflectionTypeLoadException rtle) { return rtle.Types.Where(t => t != null); }
             catch { return Enumerable.Empty<Type>(); }
-        }
-
-        private static IEnumerable<Type> PreferPlayer(IEnumerable<Type> types)
-        {
-#if UNITY_EDITOR
-            var playerAsmNames = new HashSet<string>(
-                CompilationPipeline.GetAssemblies(AssembliesType.Player).Select(a => a.name),
-                StringComparer.Ordinal);
-
-            var list = types.ToList();
-            var fromPlayer = list.Where(t => playerAsmNames.Contains(t.Assembly.GetName().Name)).ToList();
-            return fromPlayer.Count > 0 ? fromPlayer : list;
-#else
-            return types;
-#endif
         }
 
         private static string FormatAmbiguityError(string query, List<Type> candidates)
