@@ -39,8 +39,18 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             var stateMachine = layers[layerIndex].stateMachine;
 
+            // Support creating blend tree in a sub-state machine
+            string smPath = @params["stateMachinePath"]?.ToString();
+            var targetMachine = stateMachine;
+            if (!string.IsNullOrEmpty(smPath))
+            {
+                targetMachine = ControllerCreate.ResolveStateMachinePath(stateMachine, smPath);
+                if (targetMachine == null)
+                    return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
+            }
+
             Undo.RecordObject(controller, "Create Blend Tree 1D");
-            var state = stateMachine.AddState(stateName);
+            var state = targetMachine.AddState(stateName);
             var blendTree = new BlendTree
             {
                 name = stateName,
@@ -109,8 +119,18 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             var stateMachine = layers[layerIndex].stateMachine;
 
+            // Support creating blend tree in a sub-state machine
+            string smPath = @params["stateMachinePath"]?.ToString();
+            var targetMachine = stateMachine;
+            if (!string.IsNullOrEmpty(smPath))
+            {
+                targetMachine = ControllerCreate.ResolveStateMachinePath(stateMachine, smPath);
+                if (targetMachine == null)
+                    return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
+            }
+
             Undo.RecordObject(controller, "Create Blend Tree 2D");
-            var state = stateMachine.AddState(stateName);
+            var state = targetMachine.AddState(stateName);
             var blendTree = new BlendTree
             {
                 name = stateName,
@@ -371,16 +391,18 @@ namespace MCPForUnity.Editor.Tools.Animation
             string rootStateName = segments[0];
 
             var stateMachine = layers[layerIndex].stateMachine;
-            AnimatorState state = null;
-            foreach (var s in stateMachine.states)
+
+            // Support optional stateMachinePath to find states inside sub-state machines
+            string smPath = @params["stateMachinePath"]?.ToString();
+            AnimatorStateMachine searchMachine = stateMachine;
+            if (!string.IsNullOrEmpty(smPath))
             {
-                if (s.state.name == rootStateName)
-                {
-                    state = s.state;
-                    break;
-                }
+                searchMachine = ControllerCreate.ResolveStateMachinePath(stateMachine, smPath);
+                if (searchMachine == null)
+                    return (null, null, null, $"Sub-state machine path '{smPath}' not found in layer {layerIndex}");
             }
 
+            var state = ControllerCreate.FindState(searchMachine, rootStateName);
             if (state == null)
                 return (null, null, null, $"State '{rootStateName}' not found in layer {layerIndex}");
 

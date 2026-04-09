@@ -1,6 +1,6 @@
 """Build management — player builds, platform switching, settings, batch automation."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -11,17 +11,12 @@ from services.tools.utils import coerce_bool, parse_json_payload
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-ALL_ACTIONS = [
-    "build",
-    "status",
-    "platform",
-    "settings",
-    "list_settings",
-    "scenes",
-    "profiles",
-    "batch",
-    "cancel",
+BuildAction = Literal[
+    "build", "status", "platform", "settings", "list_settings",
+    "scenes", "profiles", "batch", "cancel",
 ]
+
+ALL_ACTIONS: list[str] = list(get_args(BuildAction))
 
 
 async def _send_build_command(
@@ -52,7 +47,7 @@ async def _send_build_command(
 )
 async def manage_build(
     ctx: Context,
-    action: Annotated[str, "Action: build, status, platform, settings, list_settings, scenes, profiles, batch, cancel"],
+    action: Annotated[BuildAction, "Action: build, status, platform, settings, list_settings, scenes, profiles, batch, cancel"],
     target: Annotated[Optional[str], "Build target: windows64, osx, linux64, android, ios, webgl, uwp, tvos, visionos"] = None,
     output_path: Annotated[Optional[str], "Output path for the build"] = None,
     scenes: Annotated[Optional[str], "JSON array of scene paths, or comma-separated paths"] = None,

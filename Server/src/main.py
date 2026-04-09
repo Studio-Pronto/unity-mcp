@@ -336,11 +336,26 @@ Menu Items:
 - Use `execute_menu_item` when you have read the menu items resource
 - This lets you interact with Unity's menu system and third-party tools
 
+Before Writing C# Scripts:
+- Check if an existing MCP tool can accomplish the task before writing Editor scripts.
+- Call manage_tools(action="list_groups") to see available tool groups.
+- If the task involves animation, VFX, UI Toolkit, testing, profiling, or ProBuilder, activate that group first.
+- Prefer execute_code (scripting_ext group) over writing .cs files when no dedicated tool exists.
+
 Extended Tool Groups:
 - Only core tools are visible by default. Additional capabilities live in disabled groups.
 - Use `manage_tools(action="list_groups")` to see all groups, then `manage_tools(action="activate", group="<name>")` to enable.
-- Available groups: docs (Unity API reflection & docs), scripting_ext (ScriptableObject create/modify with GUID/path object references), vfx (VFX Graph, shaders, procedural textures), animation (Animator & AnimationClip), ui (UI Toolkit), testing (test runner), probuilder (3D modeling).
-- When a task involves ScriptableObjects, VFX, animation, UI Toolkit, testing, or ProBuilder, activate the relevant group first.
+- Available groups:
+  - docs: Unity API reflection (unity_reflect) & official documentation lookup (unity_docs). Activate before writing C# code.
+  - scripting_ext: execute_code (run arbitrary C# in-editor without creating files) and manage_scriptable_object (create/modify SOs with GUID/path refs).
+  - vfx: ParticleSystem, VisualEffect (VFX Graph), LineRenderer, TrailRenderer — create, configure, and control.
+  - animation: Animator runtime control, AnimatorController editing (states, transitions, blend trees, parameters), AnimationClip creation & keyframing.
+  - ui: UI Toolkit — create/modify UXML, USS, UIDocument, PanelSettings, visual tree queries.
+  - testing: Unity Test Runner — run EditMode/PlayMode tests, async polling.
+  - probuilder: ProBuilder 3D modeling — mesh creation, extrusion, beveling, vertex ops, UV/materials.
+  - auditor: Project Auditor static analysis — code, assets, shaders, settings (Unity 6.4+).
+  - profiling: Unity Profiler — CPU hotspots, memory snapshots, frame time, counters, Frame Debugger.
+- When a task involves any of these domains, activate the relevant group first.
 
 Unity API Verification (requires 'docs' tool group):
 - When the 'docs' tool group is active, use `unity_reflect` and `unity_docs` to verify Unity API details before answering questions or writing C# code. LLM training data frequently contains incorrect, outdated, or hallucinated Unity APIs.

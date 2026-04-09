@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,23 +8,19 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-AUDIT_ACTIONS = [
+AuditorAction = Literal[
     "audit", "load_report",
-]
-
-QUERY_ACTIONS = [
     "get_summary", "list_issues", "get_issue_detail", "list_categories", "list_areas",
-]
-
-RULE_ACTIONS = [
     "list_rules", "add_rule", "remove_rule",
-]
-
-STATUS_ACTIONS = [
     "status",
 ]
 
-ALL_ACTIONS = AUDIT_ACTIONS + QUERY_ACTIONS + RULE_ACTIONS + STATUS_ACTIONS
+ALL_ACTIONS: list[str] = list(get_args(AuditorAction))
+
+AUDIT_ACTIONS = ["audit", "load_report"]
+QUERY_ACTIONS = ["get_summary", "list_issues", "get_issue_detail", "list_categories", "list_areas"]
+RULE_ACTIONS = ["list_rules", "add_rule", "remove_rule"]
+STATUS_ACTIONS = ["status"]
 
 
 @mcp_for_unity_tool(
@@ -48,7 +44,7 @@ ALL_ACTIONS = AUDIT_ACTIONS + QUERY_ACTIONS + RULE_ACTIONS + STATUS_ACTIONS
 )
 async def manage_project_auditor(
     ctx: Context,
-    action: Annotated[str, "The project auditor action to perform."],
+    action: Annotated[AuditorAction, "The project auditor action to perform."],
     # Audit filtering
     categories: Annotated[Optional[str], "Comma-separated IssueCategory names for audit (e.g. 'Code,Shader'). Omit for all."] = None,
     assemblies: Annotated[Optional[str], "Comma-separated assembly names to scope audit."] = None,

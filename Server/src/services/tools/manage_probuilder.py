@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,43 +8,48 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-# All possible actions grouped by category
-SHAPE_ACTIONS = [
+ProBuilderAction = Literal[
+    "ping",
+    # Shape
     "create_shape", "create_poly_shape",
-]
-
-MESH_ACTIONS = [
+    # Mesh
     "extrude_faces", "extrude_edges", "bevel_edges", "subdivide",
     "delete_faces", "bridge_edges", "connect_elements", "detach_faces",
     "flip_normals", "merge_faces", "combine_meshes", "merge_objects",
     "duplicate_and_flip", "create_polygon",
-]
-
-VERTEX_ACTIONS = [
+    # Vertex
     "merge_vertices", "weld_vertices", "split_vertices", "move_vertices",
     "insert_vertex", "append_vertices_to_edge",
-]
-
-SELECTION_ACTIONS = [
+    # Selection
     "select_faces",
-]
-
-UV_MATERIAL_ACTIONS = [
+    # UV & Material
     "set_face_material", "set_face_color", "set_face_uvs",
-]
-
-QUERY_ACTIONS = [
+    # Query
     "get_mesh_info", "convert_to_probuilder",
+    # Smoothing
+    "set_smoothing", "auto_smooth",
+    # Utility
+    "center_pivot", "freeze_transform", "set_pivot", "validate_mesh", "repair_mesh",
 ]
 
+ALL_ACTIONS: list[str] = list(get_args(ProBuilderAction))
+
+SHAPE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("create_")]
+MESH_ACTIONS = [a for a in ALL_ACTIONS if a in (
+    "extrude_faces", "extrude_edges", "bevel_edges", "subdivide",
+    "delete_faces", "bridge_edges", "connect_elements", "detach_faces",
+    "flip_normals", "merge_faces", "combine_meshes", "merge_objects",
+    "duplicate_and_flip", "create_polygon",
+)]
+VERTEX_ACTIONS = [a for a in ALL_ACTIONS if a in (
+    "merge_vertices", "weld_vertices", "split_vertices", "move_vertices",
+    "insert_vertex", "append_vertices_to_edge",
+)]
+SELECTION_ACTIONS = ["select_faces"]
+UV_MATERIAL_ACTIONS = ["set_face_material", "set_face_color", "set_face_uvs"]
+QUERY_ACTIONS = ["get_mesh_info", "convert_to_probuilder"]
 SMOOTHING_ACTIONS = ["set_smoothing", "auto_smooth"]
-
 UTILITY_ACTIONS = ["center_pivot", "freeze_transform", "set_pivot", "validate_mesh", "repair_mesh"]
-
-ALL_ACTIONS = (
-    ["ping"] + SHAPE_ACTIONS + MESH_ACTIONS + VERTEX_ACTIONS + SELECTION_ACTIONS
-    + UV_MATERIAL_ACTIONS + QUERY_ACTIONS + SMOOTHING_ACTIONS + UTILITY_ACTIONS
-)
 
 @mcp_for_unity_tool(
     group="probuilder",
@@ -112,7 +117,7 @@ ALL_ACTIONS = (
 )
 async def manage_probuilder(
     ctx: Context,
-    action: Annotated[str, "Action to perform."],
+    action: Annotated[ProBuilderAction, "Action to perform."],
     target: Annotated[str | None, "Target GameObject (name/path/id)."] = None,
     search_method: Annotated[
         Literal["by_id", "by_name", "by_path", "by_tag", "by_layer"] | None,

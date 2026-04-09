@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastmcp import Context
 from fastmcp.server.server import ToolResult
@@ -10,25 +10,30 @@ from services.tools.utils import build_screenshot_params, extract_screenshot_ima
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-# All possible actions grouped by category
-SETUP_ACTIONS = ["ping", "ensure_brain", "get_brain_status"]
-
-CREATION_ACTIONS = ["create_camera"]
-
-CONFIGURATION_ACTIONS = [
+CameraAction = Literal[
+    # Setup
+    "ping", "ensure_brain", "get_brain_status",
+    # Creation
+    "create_camera",
+    # Configuration
     "set_target", "set_priority", "set_lens",
     "set_body", "set_aim", "set_noise",
-]
-
-EXTENSION_ACTIONS = ["add_extension", "remove_extension"]
-
-CONTROL_ACTIONS = [
+    # Extensions
+    "add_extension", "remove_extension",
+    # Control
     "set_blend", "force_camera", "release_override", "list_cameras",
+    # Capture
+    "screenshot", "screenshot_multiview",
 ]
 
-CAPTURE_ACTIONS = ["screenshot", "screenshot_multiview"]
+ALL_ACTIONS: list[str] = list(get_args(CameraAction))
 
-ALL_ACTIONS = SETUP_ACTIONS + CREATION_ACTIONS + CONFIGURATION_ACTIONS + EXTENSION_ACTIONS + CONTROL_ACTIONS + CAPTURE_ACTIONS
+SETUP_ACTIONS = ["ping", "ensure_brain", "get_brain_status"]
+CREATION_ACTIONS = ["create_camera"]
+CONFIGURATION_ACTIONS = ["set_target", "set_priority", "set_lens", "set_body", "set_aim", "set_noise"]
+EXTENSION_ACTIONS = ["add_extension", "remove_extension"]
+CONTROL_ACTIONS = ["set_blend", "force_camera", "release_override", "list_cameras"]
+CAPTURE_ACTIONS = ["screenshot", "screenshot_multiview"]
 
 
 @mcp_for_unity_tool(
@@ -74,7 +79,7 @@ ALL_ACTIONS = SETUP_ACTIONS + CREATION_ACTIONS + CONFIGURATION_ACTIONS + EXTENSI
 )
 async def manage_camera(
     ctx: Context,
-    action: Annotated[str, "The camera action to perform."],
+    action: Annotated[CameraAction, "The camera action to perform."],
     target: Annotated[str | None, "Target camera (name, path, or instance ID)."] = None,
     search_method: Annotated[
         Literal["by_id", "by_name", "by_path"] | None,

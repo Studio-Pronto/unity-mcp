@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,43 +8,39 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-VOLUME_ACTIONS = [
+GraphicsAction = Literal[
+    "ping",
+    # Volume
     "volume_create", "volume_add_effect", "volume_set_effect",
     "volume_remove_effect", "volume_get_info", "volume_set_properties",
     "volume_list_effects", "volume_create_profile",
-]
-
-BAKE_ACTIONS = [
+    # Bake
     "bake_start", "bake_cancel", "bake_status", "bake_clear",
     "bake_reflection_probe", "bake_get_settings", "bake_set_settings",
     "bake_create_light_probe_group", "bake_create_reflection_probe",
     "bake_set_probe_positions",
-]
-
-STATS_ACTIONS = [
+    # Stats
     "stats_get", "stats_list_counters", "stats_set_scene_debug", "stats_get_memory",
-]
-
-PIPELINE_ACTIONS = [
+    # Pipeline
     "pipeline_get_info", "pipeline_set_quality",
     "pipeline_get_settings", "pipeline_set_settings",
-]
-
-FEATURE_ACTIONS = [
+    # Features
     "feature_list", "feature_add", "feature_remove",
     "feature_configure", "feature_toggle", "feature_reorder",
-]
-
-SKYBOX_ACTIONS = [
+    # Skybox
     "skybox_get", "skybox_set_material", "skybox_set_properties",
     "skybox_set_ambient", "skybox_set_fog", "skybox_set_reflection",
     "skybox_set_sun",
 ]
 
-ALL_ACTIONS = (
-    ["ping"] + VOLUME_ACTIONS + BAKE_ACTIONS + STATS_ACTIONS
-    + PIPELINE_ACTIONS + FEATURE_ACTIONS + SKYBOX_ACTIONS
-)
+ALL_ACTIONS: list[str] = list(get_args(GraphicsAction))
+
+VOLUME_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("volume_")]
+BAKE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("bake_")]
+STATS_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("stats_")]
+PIPELINE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("pipeline_")]
+FEATURE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("feature_")]
+SKYBOX_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("skybox_")]
 
 
 @mcp_for_unity_tool(
@@ -85,7 +81,7 @@ ALL_ACTIONS = (
 )
 async def manage_graphics(
     ctx: Context,
-    action: Annotated[str, "The graphics action to perform."],
+    action: Annotated[GraphicsAction, "The graphics action to perform."],
     target: Annotated[Optional[str], "Target object name or instance ID."] = None,
     effect: Annotated[Optional[str], "Effect type name (e.g., 'Bloom', 'Vignette')."] = None,
     parameters: Annotated[Optional[dict[str, Any]], "Dict of parameter values."] = None,

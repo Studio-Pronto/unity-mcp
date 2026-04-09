@@ -555,6 +555,59 @@ def controller_create(controller_path: str):
         print_success(f"Created controller at {controller_path}")
 
 
+@controller.command("add-sub-state-machine")
+@click.argument("controller_path")
+@click.argument("name")
+@click.option("--parent-path", default=None, help="Parent sub-state machine path (e.g. 'Combat'). Omit for root.")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_add_sub_state_machine(controller_path: str, name: str, parent_path: Optional[str], layer_index: int):
+    """Add a sub-state machine to an AnimatorController.
+
+    \b
+    Examples:
+        unity-mcp animation controller add-sub-state-machine "Assets/Anim/Player.controller" "Combat"
+        unity-mcp animation controller add-sub-state-machine "Assets/Anim/Player.controller" "Melee" --parent-path "Combat"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_add_sub_state_machine",
+        "controllerPath": controller_path,
+        "name": name,
+        "layerIndex": layer_index,
+    }
+    if parent_path:
+        params["parentPath"] = parent_path
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("remove-sub-state-machine")
+@click.argument("controller_path")
+@click.argument("name")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_remove_sub_state_machine(controller_path: str, name: str, layer_index: int):
+    """Remove a sub-state machine from an AnimatorController.
+
+    \b
+    Examples:
+        unity-mcp animation controller remove-sub-state-machine "Assets/Anim/Player.controller" "Combat"
+        unity-mcp animation controller remove-sub-state-machine "Assets/Anim/Player.controller" "Combat/Melee"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_remove_sub_state_machine",
+        "controllerPath": controller_path,
+        "name": name,
+        "layerIndex": layer_index,
+    }
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
 @controller.command("add-state")
 @click.argument("controller_path")
 @click.argument("state_name")

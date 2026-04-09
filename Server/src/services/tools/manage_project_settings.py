@@ -1,6 +1,6 @@
 """Project settings management — quality, physics, time, editor settings."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -10,12 +10,9 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-ALL_ACTIONS = [
-    "get",
-    "set",
-    "list",
-    "list_categories",
-]
+ProjectSettingsAction = Literal["get", "set", "list", "list_categories"]
+
+ALL_ACTIONS: list[str] = list(get_args(ProjectSettingsAction))
 
 
 async def _send_command(
@@ -46,7 +43,7 @@ async def _send_command(
 )
 async def manage_project_settings(
     ctx: Context,
-    action: Annotated[str, "Action: get, set, list, list_categories"],
+    action: Annotated[ProjectSettingsAction, "Action: get, set, list, list_categories"],
     category: Annotated[Optional[str], "Settings category: quality, physics, physics2d, time, editor"] = None,
     property: Annotated[Optional[str], "Property name (snake_case or camelCase, e.g. shadow_distance or shadowDistance)"] = None,
     value: Annotated[Optional[str], "Value to set. Scalars as strings, vectors as JSON arrays (e.g. '[0, -9.81, 0]')"] = None,

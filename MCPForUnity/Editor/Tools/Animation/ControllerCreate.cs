@@ -66,11 +66,25 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             var rootStateMachine = controller.layers[layerIndex].stateMachine;
 
+            // Resolve target state machine (supports path notation: "SubMachine/StateName")
+            AnimatorStateMachine targetMachine = rootStateMachine;
+            string actualStateName = stateName;
+            if (stateName.Contains("/"))
+            {
+                int lastSlash = stateName.LastIndexOf('/');
+                string smPath = stateName.Substring(0, lastSlash);
+                actualStateName = stateName.Substring(lastSlash + 1);
+
+                targetMachine = ResolveStateMachinePath(rootStateMachine, smPath);
+                if (targetMachine == null)
+                    return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
+            }
+
             // Check for duplicate state name
             if (FindState(rootStateMachine, stateName) != null)
                 return new { success = false, message = $"State '{stateName}' already exists in layer {layerIndex}" };
 
-            var state = rootStateMachine.AddState(stateName);
+            var state = targetMachine.AddState(actualStateName);
 
             // Optionally assign a motion clip
             string clipPath = @params["clipPath"]?.ToString();
@@ -80,7 +94,7 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var (motion, error) = LoadMotionFromPath(clipPath, clipName);
                 if (error != null)
                 {
-                    rootStateMachine.RemoveState(state);
+                    targetMachine.RemoveState(state);
                     return new { success = false, message = error };
                 }
                 state.motion = motion;
@@ -95,7 +109,7 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             bool isDefault = @params["isDefault"]?.ToObject<bool>() ?? false;
             if (isDefault)
-                rootStateMachine.defaultState = state;
+                targetMachine.defaultState = state;
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
@@ -140,13 +154,21 @@ namespace MCPForUnity.Editor.Tools.Animation
                            || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
 
             var toState = FindState(rootStateMachine, toStateName);
+            AnimatorStateMachine toStateMachine = null;
             if (toState == null)
-                return new { success = false, message = $"State '{toStateName}' not found in layer {layerIndex}" };
+            {
+                // Fallback: check if toState is a sub-state machine name
+                toStateMachine = FindStateMachine(rootStateMachine, toStateName);
+                if (toStateMachine == null)
+                    return new { success = false, message = $"State or sub-state machine '{toStateName}' not found in layer {layerIndex}" };
+            }
 
             AnimatorStateTransition transition;
             if (isAnyState)
             {
-                transition = rootStateMachine.AddAnyStateTransition(toState);
+                transition = toState != null
+                    ? rootStateMachine.AddAnyStateTransition(toState)
+                    : rootStateMachine.AddAnyStateTransition(toStateMachine);
                 fromStateName = "AnyState";
             }
             else
@@ -155,7 +177,9 @@ namespace MCPForUnity.Editor.Tools.Animation
                 if (fromState == null)
                     return new { success = false, message = $"State '{fromStateName}' not found in layer {layerIndex}" };
 
-                transition = fromState.AddTransition(toState);
+                transition = toState != null
+                    ? fromState.AddTransition(toState)
+                    : fromState.AddTransition(toStateMachine);
             }
 
             bool hasExitTime = @params["hasExitTime"]?.ToObject<bool>() ?? true;
@@ -304,58 +328,18 @@ namespace MCPForUnity.Editor.Tools.Animation
             for (int i = 0; i < controller.layers.Length; i++)
             {
                 var layer = controller.layers[i];
-                var states = new List<object>();
-                foreach (var cs in layer.stateMachine.states)
-                {
-                    var transitions = new List<object>();
-                    foreach (var t in cs.state.transitions)
-                    {
-                        var conditions = new List<object>();
-                        foreach (var c in t.conditions)
-                        {
-                            conditions.Add(new
-                            {
-                                parameter = c.parameter,
-                                mode = c.mode.ToString(),
-                                threshold = c.threshold
-                            });
-                        }
-
-                        transitions.Add(new
-                        {
-                            destinationState = t.destinationState?.name,
-                            hasExitTime = t.hasExitTime,
-                            exitTime = t.exitTime,
-                            duration = t.duration,
-                            offset = t.offset,
-                            hasFixedDuration = t.hasFixedDuration,
-                            canTransitionToSelf = t.canTransitionToSelf,
-                            conditionCount = t.conditions.Length,
-                            conditions
-                        });
-                    }
-
-                    states.Add(new
-                    {
-                        name = cs.state.name,
-                        tag = cs.state.tag,
-                        speed = cs.state.speed,
-                        hasMotion = cs.state.motion != null,
-                        motionName = cs.state.motion?.name,
-                        writeDefaultValues = cs.state.writeDefaultValues,
-                        iKOnFeet = cs.state.iKOnFeet,
-                        isDefault = layer.stateMachine.defaultState == cs.state,
-                        transitionCount = cs.state.transitions.Length,
-                        transitions
-                    });
-                }
+                var smData = SerializeStateMachine(layer.stateMachine);
 
                 layers.Add(new
                 {
                     index = i,
                     name = layer.name,
                     stateCount = layer.stateMachine.states.Length,
-                    states
+                    subStateMachineCount = layer.stateMachine.stateMachines.Length,
+                    defaultState = layer.stateMachine.defaultState?.name,
+                    states = smData.states,
+                    stateMachines = smData.stateMachines,
+                    anyStateTransitions = smData.anyStateTransitions
                 });
             }
 
@@ -385,6 +369,82 @@ namespace MCPForUnity.Editor.Tools.Animation
                     parameters
                 }
             };
+        }
+
+        private static object SerializeStateTransition(AnimatorStateTransition t)
+        {
+            var conditions = new List<object>();
+            foreach (var c in t.conditions)
+            {
+                conditions.Add(new
+                {
+                    parameter = c.parameter,
+                    mode = c.mode.ToString(),
+                    threshold = c.threshold
+                });
+            }
+
+            return new
+            {
+                destinationState = t.destinationState?.name,
+                destinationStateMachine = t.destinationState == null ? t.destinationStateMachine?.name : null,
+                isExit = t.isExit,
+                hasExitTime = t.hasExitTime,
+                exitTime = t.exitTime,
+                duration = t.duration,
+                offset = t.offset,
+                hasFixedDuration = t.hasFixedDuration,
+                canTransitionToSelf = t.canTransitionToSelf,
+                conditionCount = t.conditions.Length,
+                conditions
+            };
+        }
+
+        private static (List<object> states, List<object> stateMachines, List<object> anyStateTransitions) SerializeStateMachine(AnimatorStateMachine sm)
+        {
+            var states = new List<object>();
+            foreach (var cs in sm.states)
+            {
+                var transitions = new List<object>();
+                foreach (var t in cs.state.transitions)
+                    transitions.Add(SerializeStateTransition(t));
+
+                states.Add(new
+                {
+                    name = cs.state.name,
+                    tag = cs.state.tag,
+                    speed = cs.state.speed,
+                    hasMotion = cs.state.motion != null,
+                    motionName = cs.state.motion?.name,
+                    writeDefaultValues = cs.state.writeDefaultValues,
+                    iKOnFeet = cs.state.iKOnFeet,
+                    isDefault = sm.defaultState == cs.state,
+                    transitionCount = cs.state.transitions.Length,
+                    transitions
+                });
+            }
+
+            var stateMachines = new List<object>();
+            foreach (var csm in sm.stateMachines)
+            {
+                var childData = SerializeStateMachine(csm.stateMachine);
+                stateMachines.Add(new
+                {
+                    name = csm.stateMachine.name,
+                    stateCount = csm.stateMachine.states.Length,
+                    subStateMachineCount = csm.stateMachine.stateMachines.Length,
+                    defaultState = csm.stateMachine.defaultState?.name,
+                    states = childData.states,
+                    stateMachines = childData.stateMachines,
+                    anyStateTransitions = childData.anyStateTransitions
+                });
+            }
+
+            var anyStateTransitions = new List<object>();
+            foreach (var t in sm.anyStateTransitions)
+                anyStateTransitions.Add(SerializeStateTransition(t));
+
+            return (states, stateMachines, anyStateTransitions);
         }
 
         public static object SetStateMotion(JObject @params)
@@ -471,7 +531,7 @@ namespace MCPForUnity.Editor.Tools.Animation
                 {
                     stateName,
                     layerIndex,
-                    remainingStates = rootStateMachine.states.Length
+                    remainingStates = parentMachine.states.Length
                 }
             };
         }
@@ -501,12 +561,16 @@ namespace MCPForUnity.Editor.Tools.Animation
 
             int removedCount = 0;
 
+            // For path-based toState like "Combat/Attack", match the leaf name against destinationState
+            string toLeafName = toStateName.Contains("/") ? toStateName.Substring(toStateName.LastIndexOf('/') + 1) : toStateName;
+
             if (isAnyState)
             {
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in rootStateMachine.anyStateTransitions)
                 {
-                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
                         matching.Add(t);
                 }
 
@@ -539,7 +603,8 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in fromState.transitions)
                 {
-                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
                         matching.Add(t);
                 }
 
@@ -742,6 +807,9 @@ namespace MCPForUnity.Editor.Tools.Animation
                            || string.Equals(fromStateName, "Any", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
 
+            // For path-based toState like "Combat/Attack", match the leaf name
+            string toLeafName = toStateName.Contains("/") ? toStateName.Substring(toStateName.LastIndexOf('/') + 1) : toStateName;
+
             // Find the target transition
             AnimatorStateTransition transition = null;
             if (isAnyState)
@@ -749,7 +817,8 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in rootStateMachine.anyStateTransitions)
                 {
-                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
                         matching.Add(t);
                 }
 
@@ -771,7 +840,8 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in fromState.transitions)
                 {
-                    if (t.destinationState != null && t.destinationState.name == toStateName)
+                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
                         matching.Add(t);
                 }
 
@@ -933,26 +1003,243 @@ namespace MCPForUnity.Editor.Tools.Animation
             };
         }
 
-        /// <summary>
-        /// Finds a state by name in a state machine. Currently searches root only;
-        /// will be extended to recurse into sub-state machines when that CRUD is added.
-        /// </summary>
-        private static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName)
+        public static object AddSubStateMachine(JObject @params)
         {
-            foreach (var cs in stateMachine.states)
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string name = @params["name"]?.ToString();
+            if (string.IsNullOrEmpty(name))
+                return new { success = false, message = "'name' is required" };
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range (controller has {controller.layers.Length} layers)" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            // Resolve parent sub-state machine if specified
+            string parentPath = @params["parentPath"]?.ToString();
+            var parentMachine = rootStateMachine;
+            if (!string.IsNullOrEmpty(parentPath))
             {
-                if (cs.state.name == stateName)
-                    return cs.state;
+                parentMachine = ResolveStateMachinePath(rootStateMachine, parentPath);
+                if (parentMachine == null)
+                    return new { success = false, message = $"Parent sub-state machine path '{parentPath}' not found in layer {layerIndex}" };
             }
+
+            // Duplicate check
+            foreach (var csm in parentMachine.stateMachines)
+            {
+                if (csm.stateMachine.name == name)
+                    return new { success = false, message = $"Sub-state machine '{name}' already exists in '{parentPath ?? "root"}'" };
+            }
+
+            parentMachine.AddStateMachine(name);
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Added sub-state machine '{name}' to {(string.IsNullOrEmpty(parentPath) ? "root" : $"'{parentPath}'")} in layer {layerIndex}",
+                data = new
+                {
+                    name,
+                    parentPath = parentPath ?? "",
+                    layerIndex
+                }
+            };
+        }
+
+        public static object RemoveSubStateMachine(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string name = @params["name"]?.ToString();
+            if (string.IsNullOrEmpty(name))
+                return new { success = false, message = "'name' is required (e.g. 'Combat' or 'Combat/Melee')" };
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range (controller has {controller.layers.Length} layers)" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            AnimatorStateMachine parentMachine;
+            var target = FindStateMachine(rootStateMachine, name, out parentMachine);
+            if (target == null)
+                return new { success = false, message = $"Sub-state machine '{name}' not found in layer {layerIndex}" };
+
+            parentMachine.RemoveStateMachine(target);
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Removed sub-state machine '{name}' from layer {layerIndex}",
+                data = new
+                {
+                    name,
+                    layerIndex
+                }
+            };
+        }
+
+        /// <summary>
+        /// Resolves a slash-delimited path to a nested sub-state machine.
+        /// E.g. "Combat/Melee" walks root → Combat → Melee.
+        /// Returns null if any segment is not found.
+        /// </summary>
+        internal static AnimatorStateMachine ResolveStateMachinePath(AnimatorStateMachine root, string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return root;
+
+            string[] segments = path.Split('/');
+            var current = root;
+            foreach (string seg in segments)
+            {
+                AnimatorStateMachine child = null;
+                foreach (var csm in current.stateMachines)
+                {
+                    if (csm.stateMachine.name == seg)
+                    {
+                        child = csm.stateMachine;
+                        break;
+                    }
+                }
+                if (child == null)
+                    return null;
+                current = child;
+            }
+            return current;
+        }
+
+        /// <summary>
+        /// Finds a sub-state machine by name or slash-delimited path.
+        /// </summary>
+        internal static AnimatorStateMachine FindStateMachine(AnimatorStateMachine root, string name)
+        {
+            return FindStateMachine(root, name, out _);
+        }
+
+        /// <summary>
+        /// Finds a sub-state machine by name or slash-delimited path,
+        /// returning its parent state machine.
+        /// </summary>
+        internal static AnimatorStateMachine FindStateMachine(AnimatorStateMachine root, string name, out AnimatorStateMachine parentMachine)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                parentMachine = null;
+                return null;
+            }
+
+            if (name.Contains("/"))
+            {
+                int lastSlash = name.LastIndexOf('/');
+                string parentPath = name.Substring(0, lastSlash);
+                string leafName = name.Substring(lastSlash + 1);
+
+                var parent = ResolveStateMachinePath(root, parentPath);
+                if (parent == null)
+                {
+                    parentMachine = null;
+                    return null;
+                }
+
+                foreach (var csm in parent.stateMachines)
+                {
+                    if (csm.stateMachine.name == leafName)
+                    {
+                        parentMachine = parent;
+                        return csm.stateMachine;
+                    }
+                }
+
+                parentMachine = null;
+                return null;
+            }
+
+            // No slash — search direct children of root
+            foreach (var csm in root.stateMachines)
+            {
+                if (csm.stateMachine.name == name)
+                {
+                    parentMachine = root;
+                    return csm.stateMachine;
+                }
+            }
+
+            // Recurse depth-first
+            foreach (var csm in root.stateMachines)
+            {
+                var result = FindStateMachine(csm.stateMachine, name, out parentMachine);
+                if (result != null)
+                    return result;
+            }
+
+            parentMachine = null;
             return null;
         }
 
         /// <summary>
-        /// Finds a state by name and returns its parent state machine (needed for RemoveState).
-        /// Currently searches root only; will recurse into sub-state machines later.
+        /// Finds a state by name in a state machine, supporting:
+        /// - Path notation: "SubMachine/StateName" resolves the sub-state machine first.
+        /// - Bare names: searches root states first, then recurses depth-first into sub-state machines.
         /// </summary>
-        private static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName, out AnimatorStateMachine parentMachine)
+        internal static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName)
         {
+            return FindState(stateMachine, stateName, out _);
+        }
+
+        /// <summary>
+        /// Finds a state by name and returns its parent state machine (needed for RemoveState).
+        /// Supports path notation and depth-first recursion.
+        /// </summary>
+        internal static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName, out AnimatorStateMachine parentMachine)
+        {
+            if (string.IsNullOrEmpty(stateName))
+            {
+                parentMachine = null;
+                return null;
+            }
+
+            // Path notation: "SubMachine/StateName"
+            if (stateName.Contains("/"))
+            {
+                int lastSlash = stateName.LastIndexOf('/');
+                string smPath = stateName.Substring(0, lastSlash);
+                string leafState = stateName.Substring(lastSlash + 1);
+
+                var targetMachine = ResolveStateMachinePath(stateMachine, smPath);
+                if (targetMachine == null)
+                {
+                    parentMachine = null;
+                    return null;
+                }
+
+                foreach (var cs in targetMachine.states)
+                {
+                    if (cs.state.name == leafState)
+                    {
+                        parentMachine = targetMachine;
+                        return cs.state;
+                    }
+                }
+
+                parentMachine = null;
+                return null;
+            }
+
+            // Bare name — search root states first (backwards compat)
             foreach (var cs in stateMachine.states)
             {
                 if (cs.state.name == stateName)
@@ -961,6 +1248,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                     return cs.state;
                 }
             }
+
+            // Recurse depth-first into sub-state machines
+            foreach (var csm in stateMachine.stateMachines)
+            {
+                var result = FindState(csm.stateMachine, stateName, out parentMachine);
+                if (result != null)
+                    return result;
+            }
+
             parentMachine = null;
             return null;
         }

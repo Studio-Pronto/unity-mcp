@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,60 +8,49 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-SAMPLE_ACTIONS = [
+ProfilerAction = Literal[
+    "ping",
+    # Sample
     "sample_start", "sample_stop", "sample_read", "sample_compare", "sample_list",
-]
-
-COUNTER_ACTIONS = [
+    # Counter
     "counter_read", "counter_list",
-]
-
-FRAME_TIME_ACTIONS = [
+    # Frame time
     "frame_time_get", "frame_timing_get",
-]
-
-HIERARCHY_ACTIONS = [
+    # Hierarchy / hotspots
     "hotspots_get", "hotspots_detail", "gc_track", "threads_list",
     "timeline_get", "frame_get",
-]
-
-MEMORY_ACTIONS = [
+    # Memory
     "memory_snapshot", "memory_compare", "memory_objects", "memory_type_summary",
     "memory_fragmentation",
-]
-
-CAPTURE_ACTIONS = [
+    # Capture
     "capture_start", "capture_stop", "capture_status", "capture_load",
     "capture_save",
-]
-
-CONTROL_ACTIONS = [
+    # Control
     "profiler_enable", "profiler_disable", "deep_profiling_set", "area_set",
     "profiler_status", "callstacks_set", "gpu_profiling_set",
-]
-
-PHYSICS_ACTIONS = [
+    # Physics
     "physics_get",
-]
-
-OBJECT_MEMORY_ACTIONS = [
+    # Object memory
     "object_memory_get",
-]
-
-SNAPSHOT_ACTIONS = [
+    # Snapshots
     "snap_take", "snap_list", "snap_compare",
-]
-
-FRAME_DEBUGGER_ACTIONS = [
+    # Frame debugger
     "frame_debugger_enable", "frame_debugger_disable", "frame_debugger_get_events",
 ]
 
-ALL_ACTIONS = (
-    ["ping"] + SAMPLE_ACTIONS + COUNTER_ACTIONS + FRAME_TIME_ACTIONS
-    + HIERARCHY_ACTIONS + MEMORY_ACTIONS + CAPTURE_ACTIONS + CONTROL_ACTIONS
-    + PHYSICS_ACTIONS + OBJECT_MEMORY_ACTIONS + SNAPSHOT_ACTIONS
-    + FRAME_DEBUGGER_ACTIONS
-)
+ALL_ACTIONS: list[str] = list(get_args(ProfilerAction))
+
+SAMPLE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("sample_")]
+COUNTER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("counter_")]
+FRAME_TIME_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("frame_time") or a.startswith("frame_timing")]
+HIERARCHY_ACTIONS = [a for a in ALL_ACTIONS if a in ("hotspots_get", "hotspots_detail", "gc_track", "threads_list", "timeline_get", "frame_get")]
+MEMORY_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("memory_")]
+CAPTURE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("capture_")]
+CONTROL_ACTIONS = [a for a in ALL_ACTIONS if a in ("profiler_enable", "profiler_disable", "deep_profiling_set", "area_set", "profiler_status", "callstacks_set", "gpu_profiling_set")]
+PHYSICS_ACTIONS = ["physics_get"]
+OBJECT_MEMORY_ACTIONS = ["object_memory_get"]
+SNAPSHOT_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("snap_")]
+FRAME_DEBUGGER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("frame_debugger_")]
 
 
 @mcp_for_unity_tool(
@@ -100,7 +89,7 @@ ALL_ACTIONS = (
 )
 async def manage_profiler(
     ctx: Context,
-    action: Annotated[str, "The profiler action to perform."],
+    action: Annotated[ProfilerAction, "The profiler action to perform."],
     # Counter sampling
     label: Annotated[Optional[str], "Session label for sampling or memory snapshots."] = None,
     counters: Annotated[Optional[str], "Category name (e.g. 'render', 'physics') or JSON array of counter names."] = None,

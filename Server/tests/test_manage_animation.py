@@ -78,6 +78,7 @@ class TestActionLists:
                     "controller_set_state_motion", "controller_remove_state",
                     "controller_remove_transition", "controller_remove_parameter",
                     "controller_modify_state", "controller_modify_transition",
+                    "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
                     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
                     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
                     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree"}
@@ -639,6 +640,68 @@ class TestControllerCLICommands:
 
                 params = _get_params(mock_run)
                 assert params["properties"]["transitionIndex"] == 1
+
+
+# =============================================================================
+# Sub-State Machine CLI Commands
+# =============================================================================
+
+class TestSubStateMachineCLICommands:
+    """Verify sub-state machine CLI commands build correct parameter dicts."""
+
+    def test_add_sub_state_machine_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-sub-state-machine", "Assets/Anim/Player.controller", "Combat",
+                ])
+
+                mock_run.assert_called_once()
+                assert mock_run.call_args[0][0] == "manage_animation"
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_sub_state_machine"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["name"] == "Combat"
+
+    def test_add_sub_state_machine_with_parent_path(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-sub-state-machine", "Assets/Anim/Player.controller", "Melee",
+                    "--parent-path", "Combat",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_sub_state_machine"
+                assert params["properties"]["name"] == "Melee"
+                assert params["properties"]["parentPath"] == "Combat"
+
+    def test_remove_sub_state_machine_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-sub-state-machine", "Assets/Anim/Player.controller", "Combat",
+                ])
+
+                mock_run.assert_called_once()
+                assert mock_run.call_args[0][0] == "manage_animation"
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_remove_sub_state_machine"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["name"] == "Combat"
+
+    def test_add_state_with_sub_state_machine_path(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-state", "Assets/Anim/Player.controller", "Combat/Attack",
+                    "--clip-path", "Assets/Anim/Attack.anim",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_state"
+                assert params["properties"]["stateName"] == "Combat/Attack"
+                assert params["clipPath"] == "Assets/Anim/Attack.anim"
 
 
 # =============================================================================

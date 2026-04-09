@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,40 +8,52 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-ANIMATOR_ACTIONS = [
+AnimationAction = Literal[
+    # Animator (runtime)
     "animator_get_info", "animator_get_parameter",
     "animator_play", "animator_crossfade",
     "animator_set_parameter", "animator_set_speed", "animator_set_enabled",
-]
-
-CONTROLLER_ACTIONS = [
+    # Controller (asset)
     "controller_create", "controller_add_state", "controller_add_transition",
     "controller_add_parameter", "controller_get_info", "controller_assign",
     "controller_set_state_motion", "controller_remove_state",
     "controller_remove_transition", "controller_remove_parameter",
     "controller_modify_state", "controller_modify_transition",
+    "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree",
-]
-
-CLIP_ACTIONS = [
+    # Clip (asset)
     "clip_create", "clip_get_info",
     "clip_add_curve", "clip_set_curve", "clip_set_vector_curve",
     "clip_create_preset", "clip_assign",
     "clip_add_event", "clip_remove_event",
 ]
 
-ALL_ACTIONS = ANIMATOR_ACTIONS + CONTROLLER_ACTIONS + CLIP_ACTIONS #Not loaded in the MCP context, but will return this in the error response (1 Shot)
+ALL_ACTIONS: list[str] = list(get_args(AnimationAction))
+
+ANIMATOR_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("animator_")]
+CONTROLLER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("controller_")]
+CLIP_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("clip_")]
 
 
 @mcp_for_unity_tool(
     group="animation",
     description=(
-        "Manage Unity animation: Animator control and AnimationClip creation. "
-        "Action prefixes: animator_* (play, crossfade, set parameters, get info), "
-        "controller_* (create/modify/remove AnimatorController states, transitions, parameters, blend trees), "
-        "clip_* (create clips, add keyframe curves, assign to GameObjects). "
+        "Manage Unity animation: Animator control, AnimatorController editing, and AnimationClip creation.\n\n"
+        "ANIMATOR (runtime): animator_get_info, animator_get_parameter, animator_play, "
+        "animator_crossfade, animator_set_parameter, animator_set_speed, animator_set_enabled\n"
+        "CONTROLLER (asset): controller_create, controller_get_info, controller_assign, "
+        "controller_add_state, controller_remove_state, controller_modify_state, "
+        "controller_set_state_motion, controller_add_transition, controller_remove_transition, "
+        "controller_modify_transition, controller_add_parameter, controller_remove_parameter, "
+        "controller_add_sub_state_machine, controller_remove_sub_state_machine, "
+        "controller_add_layer, controller_remove_layer, controller_set_layer_weight, "
+        "controller_create_blend_tree_1d, controller_create_blend_tree_2d, "
+        "controller_add_blend_tree_child, controller_add_blend_tree_child_tree\n"
+        "CLIP (asset): clip_create, clip_get_info, clip_add_curve, clip_set_curve, "
+        "clip_set_vector_curve, clip_create_preset, clip_assign, clip_add_event, clip_remove_event\n\n"
+        "States in sub-state machines use path notation: 'SubMachine/StateName'.\n"
         "Action-specific parameters go in `properties` (keys match ManageAnimation.cs)."
     ),
     annotations=ToolAnnotations(
@@ -51,7 +63,7 @@ ALL_ACTIONS = ANIMATOR_ACTIONS + CONTROLLER_ACTIONS + CLIP_ACTIONS #Not loaded i
 )
 async def manage_animation(
     ctx: Context,
-    action: Annotated[str, "Action to perform (prefix: animator_, controller_, clip_)."],
+    action: Annotated[AnimationAction, "Action to perform (prefix: animator_, controller_, clip_)."],
     target: Annotated[str | None, "Target GameObject (name/path/id)."] = None,
     search_method: Annotated[
         Literal["by_id", "by_name", "by_path", "by_tag", "by_layer"] | None,

@@ -1,7 +1,7 @@
 import asyncio
 import re
 from html.parser import HTMLParser
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -10,7 +10,9 @@ from mcp.types import ToolAnnotations
 
 from services.registry import mcp_for_unity_tool
 
-ALL_ACTIONS = ["get_doc", "get_manual", "get_package_doc", "lookup"]
+DocsAction = Literal["get_doc", "get_manual", "get_package_doc", "lookup"]
+
+ALL_ACTIONS: list[str] = list(get_args(DocsAction))
 
 
 # ---------------------------------------------------------------------------
@@ -721,7 +723,7 @@ async def _lookup(
 )
 async def unity_docs(
     ctx: Context,
-    action: Annotated[str, "The documentation action to perform."],
+    action: Annotated[DocsAction, "The documentation action to perform."],
     class_name: Annotated[Optional[str], "Unity class name (e.g. 'Physics', 'Transform')."] = None,
     member_name: Annotated[Optional[str], "Method or property name to look up."] = None,
     version: Annotated[Optional[str], "Unity version (e.g. '6000.0.38f1'). Auto-extracted."] = None,

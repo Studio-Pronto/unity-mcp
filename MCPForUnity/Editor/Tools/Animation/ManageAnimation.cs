@@ -55,6 +55,8 @@ namespace MCPForUnity.Editor.Tools.Animation
             { "interruption_source", "interruptionSource" },
             { "ordered_interruption", "orderedInterruption" },
             { "can_transition_to_self", "canTransitionToSelf" },
+            { "parent_path", "parentPath" },
+            { "state_machine_path", "stateMachinePath" },
         };
 
         private static JObject NormalizeParams(JObject source)
@@ -252,8 +254,10 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "remove_parameter": return ControllerCreate.RemoveParameter(@params);
                 case "modify_state": return ControllerCreate.ModifyState(@params);
                 case "modify_transition": return ControllerCreate.ModifyTransition(@params);
+                case "add_sub_state_machine": return ControllerCreate.AddSubStateMachine(@params);
+                case "remove_sub_state_machine": return ControllerCreate.RemoveSubStateMachine(@params);
                 default:
-                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree" };
+                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree, add_sub_state_machine, remove_sub_state_machine" };
             }
         }
 

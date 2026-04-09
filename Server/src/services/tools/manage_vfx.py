@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,45 +8,52 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-# All possible actions grouped by component type
-PARTICLE_ACTIONS = [
+VFXAction = Literal[
+    "ping",
+    # Particle
     "particle_create", "particle_get_info", "particle_set_main", "particle_set_emission", "particle_set_shape",
     "particle_set_color_over_lifetime", "particle_set_size_over_lifetime",
     "particle_set_velocity_over_lifetime", "particle_set_noise", "particle_set_renderer",
     "particle_enable_module", "particle_play", "particle_stop", "particle_pause",
-    "particle_restart", "particle_clear", "particle_add_burst", "particle_clear_bursts"
-]
-
-VFX_ACTIONS = [
-    # Asset management
+    "particle_restart", "particle_clear", "particle_add_burst", "particle_clear_bursts",
+    # VFX Graph
     "vfx_create_asset", "vfx_assign_asset", "vfx_list_templates", "vfx_list_assets",
-    # Runtime control
     "vfx_get_info", "vfx_set_float", "vfx_set_int", "vfx_set_bool",
     "vfx_set_vector2", "vfx_set_vector3", "vfx_set_vector4", "vfx_set_color",
     "vfx_set_gradient", "vfx_set_texture", "vfx_set_mesh", "vfx_set_curve",
     "vfx_send_event", "vfx_play", "vfx_stop", "vfx_pause", "vfx_reinit",
-    "vfx_set_playback_speed", "vfx_set_seed"
-]
-
-LINE_ACTIONS = [
+    "vfx_set_playback_speed", "vfx_set_seed",
+    # Line
     "line_get_info", "line_set_positions", "line_add_position", "line_set_position",
     "line_set_width", "line_set_color", "line_set_material", "line_set_properties",
-    "line_clear", "line_create_line", "line_create_circle", "line_create_arc", "line_create_bezier"
-]
-
-TRAIL_ACTIONS = [
+    "line_clear", "line_create_line", "line_create_circle", "line_create_arc", "line_create_bezier",
+    # Trail
     "trail_get_info", "trail_set_time", "trail_set_width", "trail_set_color",
-    "trail_set_material", "trail_set_properties", "trail_clear", "trail_emit"
+    "trail_set_material", "trail_set_properties", "trail_clear", "trail_emit",
 ]
 
-ALL_ACTIONS = ["ping"] + PARTICLE_ACTIONS + VFX_ACTIONS + LINE_ACTIONS + TRAIL_ACTIONS
+ALL_ACTIONS: list[str] = list(get_args(VFXAction))
+
+PARTICLE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("particle_")]
+VFX_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("vfx_")]
+LINE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("line_")]
+TRAIL_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("trail_")]
 
 
 @mcp_for_unity_tool(
     group="vfx",
     description=(
-        "Manage Unity VFX components (ParticleSystem, VisualEffect, LineRenderer, TrailRenderer). "
-        "Action prefixes: particle_*, vfx_*, line_*, trail_*. "
+        "Manage Unity VFX: ParticleSystem, VisualEffect (VFX Graph), LineRenderer, TrailRenderer.\n\n"
+        "PARTICLE: particle_create, particle_get_info, particle_set_main, particle_set_emission, "
+        "particle_set_shape, particle_set_color_over_lifetime, particle_set_size_over_lifetime, "
+        "particle_set_velocity_over_lifetime, particle_set_noise, particle_set_renderer, "
+        "particle_enable_module, particle_play/stop/pause/restart/clear, particle_add_burst, particle_clear_bursts\n"
+        "VFX GRAPH: vfx_create_asset, vfx_assign_asset, vfx_list_templates, vfx_list_assets, vfx_get_info, "
+        "vfx_set_float/int/bool/vector2/vector3/vector4/color/gradient/texture/mesh/curve, "
+        "vfx_send_event, vfx_play/stop/pause/reinit, vfx_set_playback_speed, vfx_set_seed\n"
+        "LINE: line_get_info, line_set_positions, line_add_position, line_set_position, "
+        "line_set_width/color/material/properties, line_clear, line_create_line/circle/arc/bezier\n"
+        "TRAIL: trail_get_info, trail_set_time/width/color/material/properties, trail_clear, trail_emit\n\n"
         "Action-specific parameters go in `properties` (keys match ManageVFX.cs)."
     ),
     annotations=ToolAnnotations(
@@ -56,7 +63,7 @@ ALL_ACTIONS = ["ping"] + PARTICLE_ACTIONS + VFX_ACTIONS + LINE_ACTIONS + TRAIL_A
 )
 async def manage_vfx(
     ctx: Context,
-    action: Annotated[str, "Action to perform (prefix: particle_, vfx_, line_, trail_)."],
+    action: Annotated[VFXAction, "Action to perform (prefix: particle_, vfx_, line_, trail_)."],
     target: Annotated[str | None, "Target GameObject (name/path/id)."] = None,
     search_method: Annotated[
         Literal["by_id", "by_name", "by_path", "by_tag", "by_layer"] | None,

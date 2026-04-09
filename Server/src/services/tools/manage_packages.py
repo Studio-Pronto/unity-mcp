@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, get_args
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -8,11 +8,13 @@ from services.tools import get_unity_instance_from_context
 from transport.unity_transport import send_with_unity_instance
 from transport.legacy.unity_connection import async_send_command_with_retry
 
-ALL_ACTIONS = [
+PackagesAction = Literal[
     "list_packages", "search_packages", "get_package_info", "ping", "status",
     "add_package", "remove_package", "embed_package", "resolve_packages",
     "add_registry", "remove_registry", "list_registries",
 ]
+
+ALL_ACTIONS: list[str] = list(get_args(PackagesAction))
 
 
 async def _send_packages_command(
@@ -55,7 +57,7 @@ async def _send_packages_command(
 )
 async def manage_packages(
     ctx: Context,
-    action: Annotated[str, "The package action to perform."],
+    action: Annotated[PackagesAction, "The package action to perform."],
     package: Annotated[Optional[str], "Package identifier (name, name@version, git URL, or file: path)."] = None,
     force: Annotated[Optional[bool], "Force removal even if other packages depend on it."] = None,
     query: Annotated[Optional[str], "Search query for search_packages."] = None,
