@@ -3,8 +3,8 @@ using MCPForUnity.Editor.Helpers;
 using MCPForUnity.Editor.Services;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEditorInternal; // Required for tag management
+using UnityEngine;
 
 namespace MCPForUnity.Editor.Tools
 {
@@ -46,7 +46,6 @@ namespace MCPForUnity.Editor.Tools
             // Parameters for specific actions
             string tagName = p.Get("tagName");
             string layerName = p.Get("layerName");
-
             // Route action
             switch (action)
             {
@@ -135,10 +134,6 @@ namespace MCPForUnity.Editor.Tools
                 //     // Handle string name or int index
                 //     return SetQualityLevel(@params["qualityLevel"]);
 
-                // Prefab Stage
-                case "close_prefab_stage":
-                    return ClosePrefabStage();
-
                 // Package Deployment
                 case "deploy_package":
                     return DeployPackage();
@@ -176,7 +171,7 @@ namespace MCPForUnity.Editor.Tools
 
                 default:
                     return new ErrorResponse(
-                        $"Unknown action: '{action}'. Supported actions: play, pause, stop, set_active_tool, add_tag, remove_tag, add_layer, remove_layer, close_prefab_stage, deploy_package, restore_package, undo, redo. Use MCP resources for reading editor state, project info, tags, layers, selection, windows, prefab stage, and active tool."
+                        $"Unknown action: '{action}'. Supported actions: play, pause, stop, set_active_tool, add_tag, remove_tag, add_layer, remove_layer, deploy_package, restore_package, undo, redo. For prefab editing (open/save/close prefab stage), use manage_prefabs. Use MCP resources for reading editor state, project info, tags, layers, selection, windows, prefab stage, and active tool."
                     );
             }
         }
@@ -393,28 +388,6 @@ namespace MCPForUnity.Editor.Tools
             catch (Exception e)
             {
                 return new ErrorResponse($"Failed to remove layer '{layerName}': {e.Message}");
-            }
-        }
-
-        // --- Prefab Stage Methods ---
-
-        private static object ClosePrefabStage()
-        {
-            try
-            {
-                var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-                if (prefabStage == null)
-                {
-                    return new SuccessResponse("Not currently in prefab editing mode.");
-                }
-
-                string prefabPath = prefabStage.assetPath;
-                StageUtility.GoToMainStage();
-                return new SuccessResponse($"Exited prefab stage for '{prefabPath}'.", new { prefabPath });
-            }
-            catch (Exception e)
-            {
-                return new ErrorResponse($"Error closing prefab stage: {e.Message}");
             }
         }
 

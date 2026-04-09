@@ -7,6 +7,8 @@ using UnityEditor;
 using UnityEngine;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel.Unsafe;
+using UnityEngine.Profiling;
+using UProfiler = UnityEngine.Profiling.Profiler;
 
 namespace MCPForUnity.Editor.Tools.Graphics
 {
@@ -125,12 +127,12 @@ namespace MCPForUnity.Editor.Tools.Graphics
         {
             var data = new Dictionary<string, object>
             {
-                ["totalAllocatedMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2),
-                ["totalReservedMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() / (1024.0 * 1024.0), 2),
-                ["totalUnusedReservedMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetTotalUnusedReservedMemoryLong() / (1024.0 * 1024.0), 2),
-                ["monoUsedMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2),
-                ["monoHeapMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetMonoHeapSizeLong() / (1024.0 * 1024.0), 2),
-                ["graphicsDriverMB"] = Math.Round(UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2),
+                ["totalAllocatedMB"] = Math.Round(UProfiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0), 2),
+                ["totalReservedMB"] = Math.Round(UProfiler.GetTotalReservedMemoryLong() / (1024.0 * 1024.0), 2),
+                ["totalUnusedReservedMB"] = Math.Round(UProfiler.GetTotalUnusedReservedMemoryLong() / (1024.0 * 1024.0), 2),
+                ["monoUsedMB"] = Math.Round(UProfiler.GetMonoUsedSizeLong() / (1024.0 * 1024.0), 2),
+                ["monoHeapMB"] = Math.Round(UProfiler.GetMonoHeapSizeLong() / (1024.0 * 1024.0), 2),
+                ["graphicsDriverMB"] = Math.Round(UProfiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0), 2),
             };
 
             return new

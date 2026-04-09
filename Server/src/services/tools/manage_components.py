@@ -2,7 +2,7 @@
 Tool for managing components on GameObjects in Unity.
 Supports add, remove, and set_property operations.
 """
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Optional
 
 from fastmcp import Context
 from services.registry import mcp_for_unity_tool
@@ -37,18 +37,18 @@ async def manage_components(
         "Component type name (e.g., 'Rigidbody', 'BoxCollider', 'MyScript')"
     ],
     search_method: Annotated[
-        Literal["by_id", "by_name", "by_path"],
+        Optional[Literal["by_id", "by_name", "by_path"]],
         "How to find the target GameObject"
-    ] | None = None,
+    ] = None,
     # For set_property action - single property
-    property: Annotated[str,
-                        "Property name to set (for set_property action)"] | None = None,
-    value: Annotated[str | int | float | bool | dict | list,
+    property: Annotated[Optional[str],
+                        "Property name to set (for set_property action)"] = None,
+    value: Annotated[Optional[str | int | float | bool | dict | list],
                      "Value to set (for set_property action). "
                      "For object references: instance ID (int), asset path (string), "
                      "or {\"guid\": \"...\"} / {\"path\": \"...\"}. "
                      "For Sprite sub-assets: {\"guid\": \"...\", \"spriteName\": \"<name>\"} or "
-                     "{\"guid\": \"...\", \"fileID\": <id>}. Single-sprite textures auto-resolve."] | None = None,
+                     "{\"guid\": \"...\", \"fileID\": <id>}. Single-sprite textures auto-resolve."] = None,
     # For add/set_property - multiple properties
     properties: Annotated[
         dict[str, Any] | str,
@@ -57,6 +57,12 @@ async def manage_components(
         "{\"targetHealth\": {\"name\": \"Player\", \"component\": \"Health\"}}. "
         "Also accepts {\"instanceID\": 123}, {\"guid\": \"...\"}, {\"path\": \"Assets/...\"}."
     ] | None = None,
+    # For targeting a specific component when multiple of the same type exist
+    component_index: Annotated[
+        Optional[int],
+        "Zero-based index to select which component when multiple of the same type exist. "
+        "Use the components resource to discover indices. If omitted, targets the first instance."
+    ] = None,
 ) -> dict[str, Any]:
     """
     Manage components on GameObjects.
@@ -116,6 +122,9 @@ async def manage_components(
 
         if search_method:
             params["searchMethod"] = search_method
+
+        if component_index is not None:
+            params["componentIndex"] = component_index
 
         if action == "set_property":
             if property and value is not None:

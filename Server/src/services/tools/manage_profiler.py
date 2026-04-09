@@ -44,10 +44,23 @@ PHYSICS_ACTIONS = [
     "physics_get",
 ]
 
+OBJECT_MEMORY_ACTIONS = [
+    "object_memory_get",
+]
+
+SNAPSHOT_ACTIONS = [
+    "snap_take", "snap_list", "snap_compare",
+]
+
+FRAME_DEBUGGER_ACTIONS = [
+    "frame_debugger_enable", "frame_debugger_disable", "frame_debugger_get_events",
+]
+
 ALL_ACTIONS = (
     ["ping"] + SAMPLE_ACTIONS + COUNTER_ACTIONS + FRAME_TIME_ACTIONS
     + HIERARCHY_ACTIONS + MEMORY_ACTIONS + CAPTURE_ACTIONS + CONTROL_ACTIONS
-    + PHYSICS_ACTIONS
+    + PHYSICS_ACTIONS + OBJECT_MEMORY_ACTIONS + SNAPSHOT_ACTIONS
+    + FRAME_DEBUGGER_ACTIONS
 )
 
 
@@ -76,7 +89,12 @@ ALL_ACTIONS = (
         "memory_snapshot (labeled), memory_compare, memory_objects (per-object, paged), "
         "memory_type_summary, memory_fragmentation\n\n"
         "CAPTURE (.raw files): capture_start, capture_stop, capture_status, capture_load, capture_save\n\n"
-        "PHYSICS: physics_get (self-contained, all physics counters, mean/p95/p99)"
+        "PHYSICS: physics_get (self-contained, all physics counters, mean/p95/p99)\n\n"
+        "OBJECT MEMORY: object_memory_get (runtime memory of a single object by scene path or asset path)\n\n"
+        "MEMORY SNAPSHOTS (.snap, requires com.unity.memoryprofiler): "
+        "snap_take, snap_list, snap_compare\n\n"
+        "FRAME DEBUGGER: frame_debugger_enable, frame_debugger_disable, "
+        "frame_debugger_get_events (paged draw call events with shader/mesh/RT info)"
     ),
     annotations=ToolAnnotations(title="Manage Profiler"),
 )
@@ -118,6 +136,13 @@ async def manage_profiler(
     # Control
     enabled: Annotated[Optional[bool], "Enable/disable toggle for deep_profiling_set, callstacks_set, gpu_profiling_set, and area_set."] = None,
     area: Annotated[Optional[str], "Profiler area name for area_set."] = None,
+    # Object memory
+    object_path: Annotated[Optional[str], "Scene hierarchy path or asset path for object_memory_get."] = None,
+    # Memory snapshots (.snap)
+    snapshot_path: Annotated[Optional[str], "Output path for snap_take."] = None,
+    search_path: Annotated[Optional[str], "Search directory for snap_list."] = None,
+    snapshot_a: Annotated[Optional[str], "First snapshot path for snap_compare."] = None,
+    snapshot_b: Annotated[Optional[str], "Second snapshot path for snap_compare."] = None,
 ) -> dict[str, Any]:
     action_lower = action.lower()
     if action_lower not in ALL_ACTIONS:
@@ -143,6 +168,11 @@ async def manage_profiler(
         "input_path": input_path, "keep_profiler_enabled": keep_profiler_enabled,
         "enabled": enabled,
         "area": area,
+        "object_path": object_path,
+        "snapshot_path": snapshot_path,
+        "search_path": search_path,
+        "snapshot_a": snapshot_a,
+        "snapshot_b": snapshot_b,
     }
     for key, val in param_map.items():
         if val is not None:

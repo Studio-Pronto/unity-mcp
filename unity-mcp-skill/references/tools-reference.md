@@ -17,11 +17,10 @@ Complete reference for all MCP tools. Each tool includes parameters, types, and 
 - [Testing Tools](#testing-tools)
 - [Camera Tools](#camera-tools)
 - [Graphics Tools](#graphics-tools)
-- [Profiler Tools](#profiler-tools)
 - [Package Tools](#package-tools)
-- [Build Tools](#build-tools)
-- [Project Settings Tools](#project-settings-tools)
+- [Physics Tools](#physics-tools)
 - [ProBuilder Tools](#probuilder-tools)
+- [Profiler Tools](#profiler-tools)
 - [Docs Tools](#docs-tools)
 
 ---
@@ -527,37 +526,26 @@ manage_prefabs(
     components_to_add=["AudioSource"]
 )
 
-# List all overrides on a prefab variant
-manage_prefabs(action="get_overrides", prefab_path="Assets/Prefabs/EnemyVariant.prefab")
-
-# Revert ALL overrides (variant becomes identical to base)
-manage_prefabs(action="revert_overrides", prefab_path="Assets/Prefabs/EnemyVariant.prefab", revert_scope="all")
-
-# Revert a single property override
+# Delete child GameObjects from prefab
 manage_prefabs(
-    action="revert_overrides",
-    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
-    revert_scope="property",
-    component_type="Rigidbody",
-    property_path="m_Mass"
+    action="modify_contents",
+    prefab_path="Assets/Prefabs/Player.prefab",
+    delete_child=["OldChild", "Turret/Barrel"]  # single string or list
 )
 
-# Revert all overrides on a specific component
+# Create child GameObject in prefab
 manage_prefabs(
-    action="revert_overrides",
-    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
-    revert_scope="component",
-    target="Enemy",
-    component_type="Rigidbody"
+    action="modify_contents",
+    prefab_path="Assets/Prefabs/Player.prefab",
+    create_child={"name": "SpawnPoint", "primitive_type": "Sphere", "position": [0, 2, 0]}
 )
 
-# Revert an added component
+# Set component properties on prefab contents
 manage_prefabs(
-    action="revert_overrides",
-    prefab_path="Assets/Prefabs/EnemyVariant.prefab",
-    revert_scope="added_component",
-    target="Enemy",
-    component_type="AudioSource"
+    action="modify_contents",
+    prefab_path="Assets/Prefabs/Player.prefab",
+    target="ChildObject",
+    component_properties={"Rigidbody": {"mass": 5.0}, "MyScript": {"health": 100}}
 )
 ```
 
@@ -742,7 +730,9 @@ manage_editor(action="remove_tag", tag_name="OldTag")
 manage_editor(action="add_layer", layer_name="Projectiles")
 manage_editor(action="remove_layer", layer_name="OldLayer")
 
-manage_editor(action="close_prefab_stage")  # Exit prefab editing mode back to main scene
+manage_prefabs(action="open_prefab_stage", prefab_path="Assets/Prefabs/Enemy.prefab")
+manage_prefabs(action="save_prefab_stage")   # Save changes in the open prefab stage
+manage_prefabs(action="close_prefab_stage")  # Exit prefab editing mode back to main scene
 
 # Package deployment (no confirmation dialog — designed for LLM-driven iteration)
 manage_editor(action="deploy_package")     # Copy configured MCPForUnity source into installed package
@@ -1117,13 +1107,6 @@ manage_graphics(action="feature_list")
 manage_graphics(action="feature_add", feature_type="FullScreenPassRendererFeature",
     name="NightVision", material="Assets/Materials/NightVision.mat")
 
-# Configure a renderer feature's properties
-manage_graphics(action="feature_configure", name="DecalRendererFeature",
-    properties={"m_Settings.decalLayers": True})
-
-# Remove a renderer feature by name
-manage_graphics(action="feature_remove", name="ScreenSpaceAmbientOcclusion")
-
 # Toggle a feature off
 manage_graphics(action="feature_toggle", index=0, active=False)
 
@@ -1135,162 +1118,6 @@ manage_graphics(action="feature_reorder", order=[2, 0, 1])
 - `mcpforunity://scene/volumes` — Lists all Volume components in the scene with their profiles and effects
 - `mcpforunity://rendering/stats` — Current rendering performance counters
 - `mcpforunity://pipeline/renderer-features` — URP renderer features on the active renderer
-
----
-
-## Profiler Tools
-
-### manage_profiler
-
-Unity Profiler management: counter sampling, frame time analysis, CPU hotspots, memory profiling, GC tracking, profiler capture, and profiler control. Works autonomously — auto-enables profiler when needed. Use `ping` to check profiler state.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | string | Yes | Action to perform (see categories below) |
-| `label` | string | Sometimes | Session label for sampling or memory snapshots |
-| `counters` | string | Sometimes | Category name (e.g., `render`, `physics`) or counter names |
-| `frames` | int | No | Number of frames to collect/analyze (default 120) |
-| `top_n` | int | No | Number of top results to return (default 20) |
-| `label_a` | string | Sometimes | First label for comparison actions |
-| `label_b` | string | Sometimes | Second label for comparison actions |
-| `marker_name` | string | Sometimes | Marker name for `hotspots_detail` |
-| `page_size` | int | No | Results per page for paged actions |
-| `cursor` | string | No | Pagination cursor (integer offset) |
-
-**Actions by category:**
-
-**Status:**
-- `ping` — Check profiler tool availability, play mode, profiler enabled state, active session count
-
-**Counter Sampling (ProfilerRecorder, works without Profiler window):**
-- `sample_start` — Start recording counters. Params: `label` (required), `counters` (category name or counter list), `capacity` (default 300)
-- `sample_stop` — Stop and dispose recorders. Params: `label` (optional, omit to stop all)
-- `sample_read` — Read accumulated stats (mean/p95/p99). Params: `label`, `last_n` (optional)
-- `sample_compare` — Compare two sessions with deltas. Params: `label_a`, `label_b`, `threshold_pct` (default 5.0)
-- `sample_list` — List active sampling sessions
-- `counter_read` — One-shot read of specific counters. Params: `counters`
-- `counter_list` — List available profiler counters. Params: `category` (optional), `search` (optional), `page_size`, `cursor`
-
-**Frame Time:**
-- `frame_time_get` — Self-contained blocking call. Returns main thread, render thread, GPU breakdown with bottleneck classification and 60fps headroom. Params: `frames` (default 120)
-- `frame_timing_get` — FrameTimingManager-based timing: VSync wait time (`cpu_present_wait_ms`), dynamic resolution scale, CPU/GPU breakdown. Lower overhead than `frame_time_get`. Params: `frames` (default 120)
-
-**CPU Hotspots (HierarchyFrameDataView, auto-enables profiler):**
-- `hotspots_get` — Top-N expensive markers by self time. Returns `object_name` (associated GameObject) per hotspot. Params: `top_n`, `frames`, `min_ms`, `thread` (main/render/all/numeric index)
-- `hotspots_detail` — Drill into marker's callers, callees, GC alloc. Includes `callstack` and `callstacks_available` when deep profiling or allocation callstacks are enabled. Params: `marker_name`, `frames`
-- `gc_track` — GC allocation tracking with per-marker attribution and worst frames. Includes per-allocator `callstack` when allocation callstacks are enabled. Params: `frames`, `top_n`
-- `threads_list` — List all profiled threads (index, name, group). Use thread index with `hotspots_get` thread param
-- `timeline_get` — Per-sample timeline for a specific frame via RawFrameDataView. Returns top samples by duration and flow events for async tracing. Params: `frame` (default: latest), `thread_index` (default 0), `top_n` (default 30), `min_ms` (default 0.01)
-- `frame_get` — Read specific frame data: overview text (CPU/GPU/Rendering/Memory), frame timing, FPS. Params: `frame` (default: latest)
-
-**Memory (instant, no profiler needed):**
-- `memory_snapshot` — Labeled memory snapshot (total/mono/graphics/GC). Params: `label` (optional)
-- `memory_compare` — Compare two labeled snapshots. Params: `label_a`, `label_b`
-- `memory_objects` — Per-object memory by type/name, paged. Params: `type`, `target`, `min_size_kb`, `page_size`, `cursor`
-- `memory_type_summary` — Memory grouped by object type. Params: `min_total_mb`, `max_objects`
-- `memory_fragmentation` — Heap fragmentation by power-of-two size bucket (Unity 2021.2+)
-
-**Capture (.raw files):**
-- `capture_start` — Start recording to .raw profiler capture file. Params: `output_path` (optional, auto-generated)
-- `capture_stop` — Stop recording, return file path and size. Params: `keep_profiler_enabled`
-- `capture_status` — Current profiler recording state
-- `capture_load` — Load .raw profiler capture into buffer for offline analysis. Params: `input_path`
-- `capture_save` — Save profiler buffer to .data file. Different from capture_start/stop (which record live). Params: `output_path` (optional, auto-generated)
-
-**Control:**
-- `profiler_enable` — Enable profiler recording
-- `profiler_disable` — Disable profiler recording (counter sampling continues)
-- `deep_profiling_set` — Toggle deep profiling (significant overhead). Params: `enabled`
-- `area_set` — Enable/disable specific profiler areas. Params: `area`, `enabled`
-- `profiler_status` — Full profiler state: areas, deep profiling, callstacks, buffer, sessions
-- `callstacks_set` — Toggle allocation callstack recording. Params: `enabled`. Significant overhead — disable when done
-- `gpu_profiling_set` — Toggle GPU profiling with availability check. Params: `enabled`. Platform-dependent (D3D11/D3D12/OpenGL)
-
-**Physics:**
-- `physics_get` — Self-contained physics counter snapshot. Params: `frames` (default 120)
-
-**Examples:**
-
-```python
-# Check profiler state
-manage_profiler(action="ping")
-
-# Get frame time with bottleneck classification
-manage_profiler(action="frame_time_get", frames=120)
-
-# Find CPU hotspots
-manage_profiler(action="hotspots_get", top_n=10, frames=120, thread="main")
-
-# Drill into a specific marker
-manage_profiler(action="hotspots_detail", marker_name="MeshCollider.Bake")
-
-# A/B comparison workflow
-manage_profiler(action="sample_start", label="before", counters="render")
-# ... user plays ...
-manage_profiler(action="sample_read", label="before")
-# ... make a change ...
-manage_profiler(action="sample_start", label="after", counters="render")
-# ... user plays ...
-manage_profiler(action="sample_compare", label_a="before", label_b="after")
-
-# Memory investigation
-manage_profiler(action="memory_snapshot", label="baseline")
-manage_profiler(action="memory_type_summary")
-manage_profiler(action="memory_objects", type="Texture2D", min_size_kb=100)
-
-# GC tracking
-manage_profiler(action="gc_track", frames=180)
-
-# Save .raw capture
-manage_profiler(action="capture_start")
-# ... user plays ...
-manage_profiler(action="capture_stop")
-
-# Physics profiling
-manage_profiler(action="physics_get", frames=120)
-
-# List available counters
-manage_profiler(action="counter_list", category="render")
-
-# Full profiler status check
-manage_profiler(action="profiler_status")
-
-# Enable allocation callstacks, then track GC with source locations
-manage_profiler(action="callstacks_set", enabled=True)
-manage_profiler(action="gc_track", frames=180)
-
-# Capture → load → analyze workflow
-manage_profiler(action="capture_start")
-# ... gameplay ...
-manage_profiler(action="capture_stop")
-manage_profiler(action="capture_load", input_path="Profiler/capture_2026-03-21_14-30-00.raw")
-manage_profiler(action="hotspots_get", frames=500)
-
-# Check heap fragmentation
-manage_profiler(action="memory_fragmentation")
-
-# List all profiled threads, then analyze a specific worker thread
-manage_profiler(action="threads_list")
-manage_profiler(action="hotspots_get", thread="3", frames=120)
-
-# FrameTimingManager (includes VSync wait time)
-manage_profiler(action="frame_timing_get", frames=120)
-
-# Per-sample timeline for a specific frame
-manage_profiler(action="frame_get", frame=500)
-manage_profiler(action="timeline_get", frame=500, thread_index=0, top_n=20)
-
-# Save profiler buffer for later analysis
-manage_profiler(action="capture_save")
-
-# Enable GPU profiling
-manage_profiler(action="gpu_profiling_set", enabled=True)
-```
-
-**Resources:**
-- `mcpforunity://profiler/snapshot` — Instant profiler snapshot: FPS, memory, rendering counters, GC alloc, profiler state
 
 ---
 
@@ -1367,98 +1194,117 @@ manage_packages(
 
 ---
 
-## Build Tools
+## Physics Tools
 
-### manage_build
+### `manage_physics`
 
-Manage Unity player builds — trigger builds, switch platforms, configure settings, manage build scenes and profiles, run batch builds.
+Manage 3D and 2D physics: settings, collision matrix, materials, joints, queries, validation, and simulation. All actions support `dimension="3d"` (default) or `dimension="2d"` where applicable.
 
-**Settings Actions:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | Yes | See action groups below |
+| `dimension` | string | No | `"3d"` (default) or `"2d"` |
+| `settings` | object | For set_settings | Key-value physics settings dict |
+| `layer_a` / `layer_b` | string | For collision matrix | Layer name or index |
+| `collide` | bool | For set_collision_matrix | `true` to enable, `false` to disable |
+| `name` | string | For create_physics_material | Material asset name |
+| `path` | string | No | Asset folder path (create) or asset path (configure) |
+| `dynamic_friction` / `static_friction` / `bounciness` | float | No | Material properties (0–1) |
+| `friction_combine` / `bounce_combine` | string | No | `Average`, `Minimum`, `Multiply`, `Maximum` |
+| `material_path` | string | For assign_physics_material | Path to physics material asset |
+| `target` | string | For joints/queries/validate | GameObject name or instance ID |
+| `joint_type` | string | For joints | 3D: `fixed`, `hinge`, `spring`, `character`, `configurable`; 2D: `distance`, `fixed`, `friction`, `hinge`, `relative`, `slider`, `spring`, `target`, `wheel` |
+| `connected_body` | string | For add_joint | Connected body GameObject |
+| `motor` / `limits` / `spring` / `drive` | object | For configure_joint | Joint sub-config objects |
+| `properties` | object | For configure_joint/material | Direct property dict |
+| `origin` / `direction` | float[] | For raycast | Ray origin and direction `[x,y,z]` or `[x,y]` |
+| `max_distance` | float | No | Max raycast distance |
+| `shape` | string | For overlap | `sphere`, `box`, `capsule` (3D); `circle`, `box`, `capsule` (2D) |
+| `position` | float[] | For overlap | `[x,y,z]` or `[x,y]` |
+| `size` | float or float[] | For overlap | Radius (sphere/circle) or half-extents `[x,y,z]` (box) |
+| `layer_mask` | string | No | Layer name or int mask for queries |
+| `start` / `end` | float[] | For linecast | Start and end points `[x,y,z]` or `[x,y]` |
+| `point1` / `point2` | float[] | For shapecast capsule | Capsule endpoints (3D alternative) |
+| `height` | float | For shapecast capsule | Capsule height |
+| `capsule_direction` | int | For shapecast capsule | 0=X, 1=Y (default), 2=Z |
+| `angle` | float | For 2D shapecasts | Rotation angle in degrees |
+| `force` | float[] | For apply_force | Force vector `[x,y,z]` or `[x,y]` |
+| `force_mode` | string | For apply_force | `Force`, `Impulse`, `Acceleration`, `VelocityChange` (3D); `Force`, `Impulse` (2D) |
+| `force_type` | string | For apply_force | `normal` (default) or `explosion` (3D only) |
+| `torque` | float[] | For apply_force | Torque `[x,y,z]` (3D) or `[z]` (2D) |
+| `explosion_position` | float[] | For apply_force explosion | Explosion center `[x,y,z]` |
+| `explosion_radius` | float | For apply_force explosion | Explosion sphere radius |
+| `explosion_force` | float | For apply_force explosion | Explosion force magnitude |
+| `upwards_modifier` | float | For apply_force explosion | Y-axis offset (default 0) |
+| `steps` | int | For simulate_step | Number of steps (1–100) |
+| `step_size` | float | No | Step size in seconds (default: `Time.fixedDeltaTime`) |
 
-| Action | Parameters | Description |
-|--------|-----------|-------------|
-| `settings` | `property`, `value` (optional), `target` (optional) | Read or write a PlayerSettings property. Supports ANY PlayerSettings property via reflection, not just well-known shortcuts |
-| `list_settings` | — | List all available PlayerSettings properties with types and read/write info |
+**Action groups:**
 
-Well-known property shortcuts: `product_name`, `company_name`, `version`, `bundle_id`, `scripting_backend`, `defines`, `architecture`. Any `PlayerSettings` property name also works (e.g. `bakeCollisionMeshes`, `allowUnsafeCode`, `stripEngineCode`).
+- **Settings:** `ping`, `get_settings`, `set_settings`
+- **Collision Matrix:** `get_collision_matrix`, `set_collision_matrix`
+- **Materials:** `create_physics_material`, `configure_physics_material`, `assign_physics_material`
+- **Joints:** `add_joint`, `configure_joint`, `remove_joint`
+- **Queries:** `raycast`, `raycast_all`, `linecast`, `shapecast`, `overlap`
+- **Forces:** `apply_force`
+- **Rigidbody:** `get_rigidbody`, `configure_rigidbody`
+- **Validation:** `validate`
+- **Simulation:** `simulate_step`
 
-**Build Actions:**
-
-| Action | Parameters | Description |
-|--------|-----------|-------------|
-| `build` | `target`, `output_path`, `scenes`, `development`, `options`, `subtarget`, `scripting_backend`, `profile` | Trigger a player build (async, returns job_id) |
-| `status` | `job_id` (optional) | Poll build status |
-| `platform` | `target` (optional), `subtarget` (optional) | Read current platform or switch active build target |
-| `scenes` | `scenes` (optional) | Read or set the build scene list |
-| `profiles` | `profile` (optional), `activate` (optional) | List or activate build profiles (Unity 6+) |
-| `batch` | `targets` or `profiles`, `output_dir` | Run builds across multiple platforms |
-| `cancel` | `job_id` | Cancel a running build |
-
-**Example — Read any PlayerSettings property:**
 ```python
-manage_build(action="settings", property="bakeCollisionMeshes")
-```
+# Check physics status
+manage_physics(action="ping")
 
-**Example — Set any PlayerSettings property:**
-```python
-manage_build(action="settings", property="bakeCollisionMeshes", value="true")
-```
+# Get/set gravity
+manage_physics(action="get_settings", dimension="3d")
+manage_physics(action="set_settings", dimension="3d", settings={"gravity": [0, -20, 0]})
 
-**Example — Discover all available properties:**
-```python
-manage_build(action="list_settings")
-```
+# Collision matrix
+manage_physics(action="get_collision_matrix")
+manage_physics(action="set_collision_matrix", layer_a="Player", layer_b="Enemy", collide=False)
 
-**Example — Build for Windows:**
-```python
-manage_build(action="build", target="windows64", development="true")
-manage_build(action="status", job_id="<job_id>")
-```
+# Create a bouncy physics material and assign it
+manage_physics(action="create_physics_material", name="Bouncy", bounciness=0.9, dynamic_friction=0.2)
+manage_physics(action="assign_physics_material", target="Ball", material_path="Assets/Physics Materials/Bouncy.physicMaterial")
 
----
+# Add and configure a hinge joint
+manage_physics(action="add_joint", target="Door", joint_type="hinge", connected_body="DoorFrame")
+manage_physics(action="configure_joint", target="Door", joint_type="hinge",
+               motor={"targetVelocity": 90, "force": 100},
+               limits={"min": -90, "max": 0, "bounciness": 0})
 
-## Project Settings Tools
+# Raycast and overlap
+manage_physics(action="raycast", origin=[0, 10, 0], direction=[0, -1, 0], max_distance=50)
+manage_physics(action="overlap", shape="sphere", position=[0, 0, 0], size=5.0)
 
-### manage_project_settings
+# Validate scene physics setup
+manage_physics(action="validate")                    # whole scene
+manage_physics(action="validate", target="Player")  # single object
 
-Read, write, and discover Unity project settings across categories. For PlayerSettings, use manage_build instead.
+# Multi-hit raycast (returns all hits sorted by distance)
+manage_physics(action="raycast_all", origin=[0, 10, 0], direction=[0, -1, 0])
 
-**Actions:**
+# Linecast (point A to point B)
+manage_physics(action="linecast", start=[0, 0, 0], end=[10, 0, 0])
 
-| Action | Parameters | Description |
-|--------|-----------|-------------|
-| `get` | `category`, `property` | Read a single property value |
-| `set` | `category`, `property`, `value` | Write a property value |
-| `list` | `category` | List all properties for a category with types and read/write info |
-| `list_categories` | — | List all supported categories |
+# Shapecast (sphere/box/capsule sweep)
+manage_physics(action="shapecast", shape="sphere", origin=[0, 5, 0], direction=[0, -1, 0], size=0.5)
+manage_physics(action="shapecast", shape="box", origin=[0, 5, 0], direction=[0, -1, 0], size=[1, 1, 1])
 
-**Categories:** `quality` (QualitySettings), `physics`, `physics2d`, `time`, `editor` (EditorSettings)
+# Apply force (works with simulate_step for edit-mode previewing)
+manage_physics(action="apply_force", target="Ball", force=[0, 500, 0], force_mode="Impulse")
+manage_physics(action="apply_force", target="Ball", torque=[0, 10, 0])
 
-**Example — Discover categories:**
-```python
-manage_project_settings(action="list_categories")
-```
+# Explosion force (3D only)
+manage_physics(action="apply_force", target="Crate", force_type="explosion",
+               explosion_force=1000, explosion_position=[0, 0, 0], explosion_radius=10)
 
-**Example — List properties for a category:**
-```python
-manage_project_settings(action="list", category="quality")
-```
+# Configure rigidbody properties
+manage_physics(action="configure_rigidbody", target="Player",
+               properties={"mass": 80, "drag": 0.5, "useGravity": True, "collisionDetectionMode": "Continuous"})
 
-**Example — Read a setting:**
-```python
-manage_project_settings(action="get", category="quality", property="streamingMipmapsActive")
-```
-
-**Example — Write scalar settings:**
-```python
-manage_project_settings(action="set", category="quality", property="shadowDistance", value="100")
-manage_project_settings(action="set", category="time", property="fixedDeltaTime", value="0.01")
-manage_project_settings(action="set", category="editor", property="serializationMode", value="ForceText")
-```
-
-**Example — Write vector settings (JSON array):**
-```python
-manage_project_settings(action="set", category="physics", property="gravity", value="[0, -9.81, 0]")
+# Step physics in edit mode
+manage_physics(action="simulate_step", steps=10, step_size=0.02)
 ```
 
 ---
@@ -1575,6 +1421,77 @@ manage_probuilder(action="validate_mesh", target="MyCube")
 ```
 
 See also: [ProBuilder Workflow Guide](probuilder-guide.md) for detailed patterns and complex object examples.
+
+---
+
+## Profiler Tools
+
+### `manage_profiler`
+
+Unity Profiler session control, counter reads, memory snapshots, and Frame Debugger. Group: `profiling` (opt-in via `manage_tools`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | Yes | See action groups below |
+| `category` | string | For get_counters | Profiler category name (e.g. `Render`, `Scripts`, `Memory`, `Physics`) |
+| `counters` | list[str] | No | Specific counter names for get_counters. Omit to read all in category |
+| `object_path` | string | For get_object_memory | Scene hierarchy or asset path |
+| `log_file` | string | No | Path to `.raw` file for profiler_start recording |
+| `enable_callstacks` | bool | No | Enable allocation callstacks for profiler_start |
+| `areas` | dict[str, bool] | For profiler_set_areas | Area name to enabled/disabled mapping |
+| `snapshot_path` | string | No | Output path for memory_take_snapshot |
+| `search_path` | string | No | Search directory for memory_list_snapshots |
+| `snapshot_a` | string | For memory_compare_snapshots | First snapshot file path |
+| `snapshot_b` | string | For memory_compare_snapshots | Second snapshot file path |
+| `page_size` | int | No | Page size for frame_debugger_get_events (default 50) |
+| `cursor` | int | No | Cursor offset for frame_debugger_get_events |
+
+**Action groups:**
+
+- **Session:** `profiler_start`, `profiler_stop`, `profiler_status`, `profiler_set_areas`
+- **Counters:** `get_frame_timing`, `get_counters`, `get_object_memory`
+- **Memory Snapshot:** `memory_take_snapshot`, `memory_list_snapshots`, `memory_compare_snapshots` (requires `com.unity.memoryprofiler`)
+- **Frame Debugger:** `frame_debugger_enable`, `frame_debugger_disable`, `frame_debugger_get_events`
+- **Utility:** `ping`
+
+```python
+# Check profiler availability
+manage_profiler(action="ping")
+
+# Start profiling (optionally record to file)
+manage_profiler(action="profiler_start")
+manage_profiler(action="profiler_start", log_file="Assets/profiler.raw", enable_callstacks=True)
+
+# Check profiler status
+manage_profiler(action="profiler_status")
+
+# Toggle profiler areas
+manage_profiler(action="profiler_set_areas", areas={"CPU": True, "GPU": True, "Rendering": True, "Memory": False})
+
+# Stop profiling
+manage_profiler(action="profiler_stop")
+
+# Read frame timing data (12 fields from FrameTimingManager)
+manage_profiler(action="get_frame_timing")
+
+# Read counters by category
+manage_profiler(action="get_counters", category="Render")
+manage_profiler(action="get_counters", category="Memory", counters=["Total Used Memory", "GC Used Memory"])
+
+# Get memory size of a specific object
+manage_profiler(action="get_object_memory", object_path="Player/Mesh")
+
+# Memory snapshots (requires com.unity.memoryprofiler)
+manage_profiler(action="memory_take_snapshot")
+manage_profiler(action="memory_take_snapshot", snapshot_path="Assets/Snapshots/baseline.snap")
+manage_profiler(action="memory_list_snapshots")
+manage_profiler(action="memory_compare_snapshots", snapshot_a="Assets/Snapshots/before.snap", snapshot_b="Assets/Snapshots/after.snap")
+
+# Frame Debugger
+manage_profiler(action="frame_debugger_enable")
+manage_profiler(action="frame_debugger_get_events", page_size=20, cursor=0)
+manage_profiler(action="frame_debugger_disable")
+```
 
 ---
 

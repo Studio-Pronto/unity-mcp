@@ -483,3 +483,91 @@ def physics(frames):
         params["frames"] = frames
     result = run_command("manage_profiler", params, config)
     click.echo(format_output(result, config.format))
+
+
+# --- Object memory ---
+
+@profiler.command("object-memory")
+@click.option("--path", "-p", required=True, help="Scene hierarchy path or asset path.")
+@handle_unity_errors
+def object_memory(path):
+    """Get runtime memory size of a single Unity object."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "object_memory_get", "object_path": path}, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Memory snapshots (.snap) ---
+
+@profiler.command("snap-take")
+@click.option("--path", "-p", default=None, help="Output .snap file path (default: auto-generated).")
+@handle_unity_errors
+def snap_take(path):
+    """Take a memory snapshot (requires com.unity.memoryprofiler)."""
+    config = get_config()
+    params = {"action": "snap_take"}
+    if path:
+        params["snapshot_path"] = path
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+@profiler.command("snap-list")
+@click.option("--search-path", default=None, help="Directory to search for snapshots.")
+@handle_unity_errors
+def snap_list(search_path):
+    """List available memory snapshot files."""
+    config = get_config()
+    params = {"action": "snap_list"}
+    if search_path:
+        params["search_path"] = search_path
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+@profiler.command("snap-compare")
+@click.option("--a", "snapshot_a", required=True, help="First snapshot path.")
+@click.option("--b", "snapshot_b", required=True, help="Second snapshot path.")
+@handle_unity_errors
+def snap_compare(snapshot_a, snapshot_b):
+    """Compare two memory snapshots."""
+    config = get_config()
+    result = run_command("manage_profiler", {
+        "action": "snap_compare",
+        "snapshot_a": snapshot_a, "snapshot_b": snapshot_b,
+    }, config)
+    click.echo(format_output(result, config.format))
+
+
+# --- Frame Debugger ---
+
+@profiler.command("frame-debugger-enable")
+@handle_unity_errors
+def frame_debugger_enable():
+    """Enable the Frame Debugger and report event count."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "frame_debugger_enable"}, config)
+    click.echo(format_output(result, config.format))
+
+
+@profiler.command("frame-debugger-disable")
+@handle_unity_errors
+def frame_debugger_disable():
+    """Disable the Frame Debugger."""
+    config = get_config()
+    result = run_command("manage_profiler", {"action": "frame_debugger_disable"}, config)
+    click.echo(format_output(result, config.format))
+
+
+@profiler.command("frame-debugger-events")
+@click.option("--page-size", default=50, help="Events per page (default 50).")
+@click.option("--cursor", default=None, type=int, help="Cursor offset.")
+@handle_unity_errors
+def frame_debugger_events(page_size, cursor):
+    """Get Frame Debugger draw call events (paged)."""
+    config = get_config()
+    params = {"action": "frame_debugger_get_events", "page_size": page_size}
+    if cursor is not None:
+        params["cursor"] = cursor
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))

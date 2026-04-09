@@ -17,6 +17,9 @@ from services.tools.manage_profiler import (
     CAPTURE_ACTIONS,
     CONTROL_ACTIONS,
     PHYSICS_ACTIONS,
+    OBJECT_MEMORY_ACTIONS,
+    SNAPSHOT_ACTIONS,
+    FRAME_DEBUGGER_ACTIONS,
 )
 
 
@@ -54,7 +57,8 @@ def test_all_actions_is_union_of_sub_lists():
     expected = set(
         ["ping"] + SAMPLE_ACTIONS + COUNTER_ACTIONS + FRAME_TIME_ACTIONS
         + HIERARCHY_ACTIONS + MEMORY_ACTIONS + CAPTURE_ACTIONS + CONTROL_ACTIONS
-        + PHYSICS_ACTIONS
+        + PHYSICS_ACTIONS + OBJECT_MEMORY_ACTIONS + SNAPSHOT_ACTIONS
+        + FRAME_DEBUGGER_ACTIONS
     )
     assert set(ALL_ACTIONS) == expected
 
@@ -64,7 +68,7 @@ def test_no_duplicate_actions():
 
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 34
+    assert len(ALL_ACTIONS) == 41
 
 
 def test_sample_actions_count():
@@ -623,3 +627,91 @@ def test_tool_registered_with_core_group():
     ]
     assert len(profiler_tools) == 1
     assert profiler_tools[0]["group"] == "core"
+
+
+# ---------------------------------------------------------------------------
+# Object memory
+# ---------------------------------------------------------------------------
+
+def test_object_memory_get_forwards_path(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="object_memory_get", object_path="/Player/Mesh")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["object_path"] == "/Player/Mesh"
+
+
+# ---------------------------------------------------------------------------
+# Memory snapshots (.snap)
+# ---------------------------------------------------------------------------
+
+def test_snap_take_forwards_path(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="snap_take", snapshot_path="/tmp/snap.snap")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["snapshot_path"] == "/tmp/snap.snap"
+
+
+def test_snap_list_forwards_search_path(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="snap_list", search_path="/tmp/captures")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["search_path"] == "/tmp/captures"
+
+
+def test_snap_compare_forwards_both_paths(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="snap_compare",
+            snapshot_a="/tmp/a.snap", snapshot_b="/tmp/b.snap",
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["snapshot_a"] == "/tmp/a.snap"
+    assert mock_unity["params"]["snapshot_b"] == "/tmp/b.snap"
+
+
+# ---------------------------------------------------------------------------
+# Frame Debugger
+# ---------------------------------------------------------------------------
+
+def test_frame_debugger_enable_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="frame_debugger_enable")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "frame_debugger_enable"
+
+
+def test_frame_debugger_disable_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="frame_debugger_disable")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "frame_debugger_disable"
+
+
+def test_frame_debugger_get_events_forwards_paging(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="frame_debugger_get_events",
+            page_size=25, cursor="50",
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["page_size"] == 25
+    assert mock_unity["params"]["cursor"] == "50"
+
+
+def test_object_memory_actions_count():
+    assert len(OBJECT_MEMORY_ACTIONS) == 1
+
+
+def test_snapshot_actions_count():
+    assert len(SNAPSHOT_ACTIONS) == 3
+
+
+def test_frame_debugger_actions_count():
+    assert len(FRAME_DEBUGGER_ACTIONS) == 3

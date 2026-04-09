@@ -121,6 +121,26 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     case "physics_get":
                         return await CounterOps.PhysicsGet(@params);
 
+                    // --- Object memory (single object by path, sync) ---
+                    case "object_memory_get":
+                        return ObjectMemoryOps.GetObjectMemory(@params);
+
+                    // --- Memory Profiler snapshots (requires com.unity.memoryprofiler, async) ---
+                    case "snap_take":
+                        return await MemorySnapshotOps.TakeSnapshotAsync(@params);
+                    case "snap_list":
+                        return MemorySnapshotOps.ListSnapshots(@params);
+                    case "snap_compare":
+                        return MemorySnapshotOps.CompareSnapshots(@params);
+
+                    // --- Frame Debugger (reflection-based, sync) ---
+                    case "frame_debugger_enable":
+                        return FrameDebuggerOps.Enable(@params);
+                    case "frame_debugger_disable":
+                        return FrameDebuggerOps.Disable(@params);
+                    case "frame_debugger_get_events":
+                        return FrameDebuggerOps.GetEvents(@params);
+
                     default:
                         return new ErrorResponse(
                             $"Unknown action: '{action}'. Valid actions: ping, "
@@ -131,7 +151,10 @@ namespace MCPForUnity.Editor.Tools.Profiler
                             + "memory_snapshot, memory_compare, memory_objects, memory_type_summary, memory_fragmentation, "
                             + "capture_start, capture_stop, capture_status, capture_load, capture_save, "
                             + "profiler_enable, profiler_disable, deep_profiling_set, area_set, profiler_status, callstacks_set, gpu_profiling_set, "
-                            + "physics_get");
+                            + "physics_get, "
+                            + "object_memory_get, "
+                            + "snap_take, snap_list, snap_compare, "
+                            + "frame_debugger_enable, frame_debugger_disable, frame_debugger_get_events");
                 }
             }
             catch (Exception ex)

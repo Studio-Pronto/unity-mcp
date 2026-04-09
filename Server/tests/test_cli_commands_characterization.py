@@ -106,7 +106,7 @@ class TestCommandParameterBuilding:
                 args = mock_run.call_args
                 assert args[0][0] == "manage_prefabs"
                 params = args[0][1]
-                assert params["action"] == "open_stage"
+                assert params["action"] == "open_prefab_stage"
                 assert params["prefabPath"] == "Assets/Prefabs/Test.prefab"
 
     def test_component_add_with_optional_properties(self, runner, mock_config):
@@ -807,7 +807,7 @@ class TestMultiStepCommandFlows:
                 assert result.exit_code == 0
 
                 # Save
-                result = runner.invoke(prefab, ["save", "--force"])
+                result = runner.invoke(prefab, ["save"])
                 assert result.exit_code == 0
 
                 # Close

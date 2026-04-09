@@ -71,5 +71,6 @@ namespace MCPForUnity.Editor.Constants
         internal const string LogRecordEnabled = "MCPForUnity.LogRecordEnabled";
 
         internal const string LastAuditReportPath = "MCPForUnity.LastAuditReportPath";
+        internal const string ExecuteCodeCompiler = "MCPForUnity.ExecuteCode.Compiler";
     }
 }

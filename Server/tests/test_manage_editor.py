@@ -1,11 +1,14 @@
 """Tests for manage_editor tool."""
 import asyncio
+import inspect
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from services.tools.manage_editor import manage_editor
+import services.tools.manage_editor as manage_editor_mod
+from services.registry import get_registered_tools
 
 # ── Fixture ──────────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ def test_redo_forwards_to_unity(mock_unity):
 UNITY_FORWARDED_ACTIONS = [
     "play", "pause", "stop", "set_active_tool",
     "add_tag", "remove_tag", "add_layer", "remove_layer",
-    "close_prefab_stage", "deploy_package", "restore_package",
+    "deploy_package", "restore_package",
     "undo", "redo",
 ]
 
@@ -90,3 +93,5 @@ def test_undo_omits_none_params(mock_unity):
     assert "toolName" not in params
     assert "tagName" not in params
     assert "layerName" not in params
+
+
