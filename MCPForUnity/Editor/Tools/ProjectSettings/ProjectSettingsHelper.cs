@@ -17,8 +17,8 @@ namespace MCPForUnity.Editor.Tools.ProjectSettings
         private static readonly Dictionary<string, Type> Categories = new Dictionary<string, Type>
         {
             { "quality", typeof(QualitySettings) },
-            { "physics", typeof(Physics) },
-            { "physics2d", typeof(Physics2D) },
+            { "physics", typeof(UnityEngine.Physics) },
+            { "physics2d", typeof(UnityEngine.Physics2D) },
             { "time", typeof(Time) },
             { "editor", typeof(EditorSettings) },
         };

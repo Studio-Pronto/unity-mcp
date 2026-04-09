@@ -57,6 +57,9 @@ namespace MCPForUnity.Editor.Tools.Animation
             { "can_transition_to_self", "canTransitionToSelf" },
             { "parent_path", "parentPath" },
             { "state_machine_path", "stateMachinePath" },
+            { "new_name", "newName" },
+            { "default_state", "defaultState" },
+            { "to_state", "toState" },
         };
 
         private static JObject NormalizeParams(JObject source)
@@ -256,8 +259,11 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "modify_transition": return ControllerCreate.ModifyTransition(@params);
                 case "add_sub_state_machine": return ControllerCreate.AddSubStateMachine(@params);
                 case "remove_sub_state_machine": return ControllerCreate.RemoveSubStateMachine(@params);
+                case "modify_sub_state_machine": return ControllerCreate.ModifySubStateMachine(@params);
+                case "add_entry_transition": return ControllerCreate.AddEntryTransition(@params);
+                case "remove_entry_transition": return ControllerCreate.RemoveEntryTransition(@params);
                 default:
-                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree, add_sub_state_machine, remove_sub_state_machine" };
+                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree, add_sub_state_machine, remove_sub_state_machine, modify_sub_state_machine, add_entry_transition, remove_entry_transition" };
             }
         }
 

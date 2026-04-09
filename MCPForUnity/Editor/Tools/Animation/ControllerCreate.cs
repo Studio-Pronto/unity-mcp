@@ -339,7 +339,8 @@ namespace MCPForUnity.Editor.Tools.Animation
                     defaultState = layer.stateMachine.defaultState?.name,
                     states = smData.states,
                     stateMachines = smData.stateMachines,
-                    anyStateTransitions = smData.anyStateTransitions
+                    anyStateTransitions = smData.anyStateTransitions,
+                    entryTransitions = smData.entryTransitions
                 });
             }
 
@@ -400,7 +401,30 @@ namespace MCPForUnity.Editor.Tools.Animation
             };
         }
 
-        private static (List<object> states, List<object> stateMachines, List<object> anyStateTransitions) SerializeStateMachine(AnimatorStateMachine sm)
+        private static object SerializeEntryTransition(AnimatorTransition t)
+        {
+            var conditions = new List<object>();
+            foreach (var c in t.conditions)
+            {
+                conditions.Add(new
+                {
+                    parameter = c.parameter,
+                    mode = c.mode.ToString(),
+                    threshold = c.threshold
+                });
+            }
+
+            return new
+            {
+                destinationState = t.destinationState?.name,
+                destinationStateMachine = t.destinationState == null ? t.destinationStateMachine?.name : null,
+                isExit = t.isExit,
+                conditionCount = t.conditions.Length,
+                conditions
+            };
+        }
+
+        private static (List<object> states, List<object> stateMachines, List<object> anyStateTransitions, List<object> entryTransitions) SerializeStateMachine(AnimatorStateMachine sm)
         {
             var states = new List<object>();
             foreach (var cs in sm.states)
@@ -436,7 +460,8 @@ namespace MCPForUnity.Editor.Tools.Animation
                     defaultState = csm.stateMachine.defaultState?.name,
                     states = childData.states,
                     stateMachines = childData.stateMachines,
-                    anyStateTransitions = childData.anyStateTransitions
+                    anyStateTransitions = childData.anyStateTransitions,
+                    entryTransitions = childData.entryTransitions
                 });
             }
 
@@ -444,7 +469,11 @@ namespace MCPForUnity.Editor.Tools.Animation
             foreach (var t in sm.anyStateTransitions)
                 anyStateTransitions.Add(SerializeStateTransition(t));
 
-            return (states, stateMachines, anyStateTransitions);
+            var entryTransitions = new List<object>();
+            foreach (var t in sm.entryTransitions)
+                entryTransitions.Add(SerializeEntryTransition(t));
+
+            return (states, stateMachines, anyStateTransitions, entryTransitions);
         }
 
         public static object SetStateMotion(JObject @params)
@@ -1088,6 +1117,252 @@ namespace MCPForUnity.Editor.Tools.Animation
                 {
                     name,
                     layerIndex
+                }
+            };
+        }
+
+        public static object ModifySubStateMachine(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string name = @params["name"]?.ToString();
+            if (string.IsNullOrEmpty(name))
+                return new { success = false, message = "'name' is required (path to the sub-state machine, e.g. 'Combat' or 'Combat/Melee')" };
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range (controller has {controller.layers.Length} layers)" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            AnimatorStateMachine parentMachine;
+            var target = FindStateMachine(rootStateMachine, name, out parentMachine);
+            if (target == null)
+                return new { success = false, message = $"Sub-state machine '{name}' not found in layer {layerIndex}" };
+
+            var changed = new List<string>();
+
+            // Rename
+            string newName = @params["newName"]?.ToString();
+            if (!string.IsNullOrEmpty(newName))
+            {
+                target.name = newName;
+                changed.Add("name");
+            }
+
+            // Default state
+            string defaultStateName = @params["defaultState"]?.ToString();
+            if (!string.IsNullOrEmpty(defaultStateName))
+            {
+                var state = FindState(target, defaultStateName);
+                if (state == null)
+                    return new { success = false, message = $"State '{defaultStateName}' not found in sub-state machine '{name}'" };
+                target.defaultState = state;
+                changed.Add("defaultState");
+            }
+
+            // Position (requires struct array copy-modify-reassign)
+            JToken posToken = @params["position"];
+            if (posToken is JArray posArray && posArray.Count >= 2)
+            {
+                float x = posArray[0].ToObject<float>();
+                float y = posArray[1].ToObject<float>();
+                float z = posArray.Count >= 3 ? posArray[2].ToObject<float>() : 0f;
+
+                var machines = parentMachine.stateMachines;
+                for (int i = 0; i < machines.Length; i++)
+                {
+                    if (machines[i].stateMachine == target)
+                    {
+                        machines[i].position = new Vector3(x, y, z);
+                        break;
+                    }
+                }
+                parentMachine.stateMachines = machines;
+                changed.Add("position");
+            }
+
+            if (changed.Count == 0)
+                return new { success = false, message = "No recognized properties provided. Supported: newName, defaultState, position" };
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Modified {changed.Count} property(s) on sub-state machine '{name}': {string.Join(", ", changed)}",
+                data = new
+                {
+                    name = target.name,
+                    layerIndex,
+                    modifiedProperties = changed
+                }
+            };
+        }
+
+        public static object AddEntryTransition(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            // Resolve which state machine to add the entry transition on
+            string smPath = @params["stateMachinePath"]?.ToString();
+            var targetMachine = rootStateMachine;
+            if (!string.IsNullOrEmpty(smPath))
+            {
+                targetMachine = ResolveStateMachinePath(rootStateMachine, smPath);
+                if (targetMachine == null)
+                    return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
+            }
+
+            string toStateName = @params["toState"]?.ToString();
+            if (string.IsNullOrEmpty(toStateName))
+                return new { success = false, message = "'toState' is required" };
+
+            // Try to find as state first, then as sub-state machine
+            var toState = FindState(targetMachine, toStateName);
+            AnimatorStateMachine toStateMachine = null;
+            if (toState == null)
+            {
+                toStateMachine = FindStateMachine(targetMachine, toStateName);
+                if (toStateMachine == null)
+                    return new { success = false, message = $"State or sub-state machine '{toStateName}' not found" };
+            }
+
+            AnimatorTransition transition = toState != null
+                ? targetMachine.AddEntryTransition(toState)
+                : targetMachine.AddEntryTransition(toStateMachine);
+
+            // Add conditions
+            JToken conditionsToken = @params["conditions"];
+            int conditionCount = 0;
+            if (conditionsToken is JArray conditionsArray)
+            {
+                foreach (var condItem in conditionsArray)
+                {
+                    if (condItem is not JObject condObj) continue;
+
+                    string paramName = condObj["parameter"]?.ToString();
+                    if (string.IsNullOrEmpty(paramName)) continue;
+
+                    string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
+                    float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
+
+                    AnimatorConditionMode mode;
+                    switch (modeStr)
+                    {
+                        case "greater": mode = AnimatorConditionMode.Greater; break;
+                        case "less": mode = AnimatorConditionMode.Less; break;
+                        case "equals": mode = AnimatorConditionMode.Equals; break;
+                        case "notequal":
+                        case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
+                        case "if":
+                        case "true": mode = AnimatorConditionMode.If; break;
+                        case "ifnot":
+                        case "if_not":
+                        case "false": mode = AnimatorConditionMode.IfNot; break;
+                        default: mode = AnimatorConditionMode.Greater; break;
+                    }
+
+                    transition.AddCondition(mode, threshold, paramName);
+                    conditionCount++;
+                }
+            }
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Added entry transition to '{toStateName}'{(string.IsNullOrEmpty(smPath) ? "" : $" in '{smPath}'")} with {conditionCount} conditions",
+                data = new
+                {
+                    stateMachinePath = smPath ?? "",
+                    toState = toStateName,
+                    conditionCount
+                }
+            };
+        }
+
+        public static object RemoveEntryTransition(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            int layerIndex = @params["layerIndex"]?.ToObject<int>() ?? 0;
+            if (layerIndex < 0 || layerIndex >= controller.layers.Length)
+                return new { success = false, message = $"Layer index {layerIndex} out of range" };
+
+            var rootStateMachine = controller.layers[layerIndex].stateMachine;
+
+            string smPath = @params["stateMachinePath"]?.ToString();
+            var targetMachine = rootStateMachine;
+            if (!string.IsNullOrEmpty(smPath))
+            {
+                targetMachine = ResolveStateMachinePath(rootStateMachine, smPath);
+                if (targetMachine == null)
+                    return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
+            }
+
+            string toStateName = @params["toState"]?.ToString();
+            if (string.IsNullOrEmpty(toStateName))
+                return new { success = false, message = "'toState' is required" };
+
+            int? transitionIndex = @params["transitionIndex"]?.ToObject<int>();
+
+            string toLeafName = toStateName.Contains("/") ? toStateName.Substring(toStateName.LastIndexOf('/') + 1) : toStateName;
+
+            var matching = new List<AnimatorTransition>();
+            foreach (var t in targetMachine.entryTransitions)
+            {
+                if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                    (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    matching.Add(t);
+            }
+
+            if (matching.Count == 0)
+                return new { success = false, message = $"No entry transition to '{toStateName}' found{(string.IsNullOrEmpty(smPath) ? "" : $" in '{smPath}'")} in layer {layerIndex}" };
+
+            int removedCount;
+            if (transitionIndex.HasValue)
+            {
+                if (transitionIndex.Value < 0 || transitionIndex.Value >= matching.Count)
+                    return new { success = false, message = $"Transition index {transitionIndex.Value} out of range ({matching.Count} matching transitions)" };
+
+                targetMachine.RemoveEntryTransition(matching[transitionIndex.Value]);
+                removedCount = 1;
+            }
+            else
+            {
+                foreach (var t in matching)
+                    targetMachine.RemoveEntryTransition(t);
+                removedCount = matching.Count;
+            }
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Removed {removedCount} entry transition(s) to '{toStateName}'{(string.IsNullOrEmpty(smPath) ? "" : $" in '{smPath}'")} in layer {layerIndex}",
+                data = new
+                {
+                    stateMachinePath = smPath ?? "",
+                    toState = toStateName,
+                    removedCount
                 }
             };
         }

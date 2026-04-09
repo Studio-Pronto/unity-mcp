@@ -608,6 +608,107 @@ def controller_remove_sub_state_machine(controller_path: str, name: str, layer_i
     click.echo(format_output(result, config.format))
 
 
+@controller.command("modify-sub-state-machine")
+@click.argument("controller_path")
+@click.argument("name")
+@click.option("--new-name", default=None, help="Rename the sub-state machine.")
+@click.option("--default-state", default=None, help="Set default state (name within the sub-state machine).")
+@click.option("--position", default=None, help="Position as JSON [x, y] or [x, y, z].")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_modify_sub_state_machine(controller_path: str, name: str, new_name: Optional[str], default_state: Optional[str], position: Optional[str], layer_index: int):
+    """Modify a sub-state machine (rename, set default state, reposition).
+
+    \b
+    Examples:
+        unity-mcp animation controller modify-sub-state-machine "Assets/Anim/Player.controller" "Combat" --new-name "Battle"
+        unity-mcp animation controller modify-sub-state-machine "Assets/Anim/Player.controller" "Combat" --default-state "Block"
+        unity-mcp animation controller modify-sub-state-machine "Assets/Anim/Player.controller" "Combat" --position "[300, 100]"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_modify_sub_state_machine",
+        "controllerPath": controller_path,
+        "name": name,
+        "layerIndex": layer_index,
+    }
+    if new_name:
+        params["newName"] = new_name
+    if default_state:
+        params["defaultState"] = default_state
+    if position:
+        params["position"] = json.loads(position)
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("add-entry-transition")
+@click.argument("controller_path")
+@click.argument("to_state")
+@click.option("--state-machine-path", default=None, help="Sub-state machine path. Omit for root.")
+@click.option("--conditions", "-c", default=None, help='Conditions as JSON: [{"parameter":"Speed","mode":"greater","threshold":0.1}]')
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_add_entry_transition(controller_path: str, to_state: str, state_machine_path: Optional[str], conditions: Optional[str], layer_index: int):
+    """Add an entry transition to a state machine.
+
+    Entry transitions determine which state is entered when the state machine starts,
+    optionally based on parameter conditions.
+
+    \b
+    Examples:
+        unity-mcp animation controller add-entry-transition "Assets/Anim/Player.controller" "Walk" \\
+            --state-machine-path "Locomotion" \\
+            --conditions '[{"parameter":"Speed","mode":"greater","threshold":0.1}]'
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_add_entry_transition",
+        "controllerPath": controller_path,
+        "toState": to_state,
+        "layerIndex": layer_index,
+    }
+    if state_machine_path:
+        params["stateMachinePath"] = state_machine_path
+    if conditions:
+        params["conditions"] = json.loads(conditions)
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
+@controller.command("remove-entry-transition")
+@click.argument("controller_path")
+@click.argument("to_state")
+@click.option("--state-machine-path", default=None, help="Sub-state machine path. Omit for root.")
+@click.option("--transition-index", default=None, type=int, help="Index of specific transition to remove (removes all matching if omitted).")
+@click.option("--layer-index", default=0, type=int, help="Layer index.")
+@handle_unity_errors
+def controller_remove_entry_transition(controller_path: str, to_state: str, state_machine_path: Optional[str], transition_index: Optional[int], layer_index: int):
+    """Remove entry transition(s) from a state machine.
+
+    \b
+    Examples:
+        unity-mcp animation controller remove-entry-transition "Assets/Anim/Player.controller" "Walk" \\
+            --state-machine-path "Locomotion"
+    """
+    config = get_config()
+    params: dict[str, Any] = {
+        "action": "controller_remove_entry_transition",
+        "controllerPath": controller_path,
+        "toState": to_state,
+        "layerIndex": layer_index,
+    }
+    if state_machine_path:
+        params["stateMachinePath"] = state_machine_path
+    if transition_index is not None:
+        params["transitionIndex"] = transition_index
+
+    result = run_command("manage_animation", _normalize_params(params), config)
+    click.echo(format_output(result, config.format))
+
+
 @controller.command("add-state")
 @click.argument("controller_path")
 @click.argument("state_name")

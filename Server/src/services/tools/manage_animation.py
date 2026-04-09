@@ -20,6 +20,8 @@ AnimationAction = Literal[
     "controller_remove_transition", "controller_remove_parameter",
     "controller_modify_state", "controller_modify_transition",
     "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
+    "controller_modify_sub_state_machine",
+    "controller_add_entry_transition", "controller_remove_entry_transition",
     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree",
@@ -48,6 +50,8 @@ CLIP_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("clip_")]
         "controller_set_state_motion, controller_add_transition, controller_remove_transition, "
         "controller_modify_transition, controller_add_parameter, controller_remove_parameter, "
         "controller_add_sub_state_machine, controller_remove_sub_state_machine, "
+        "controller_modify_sub_state_machine, "
+        "controller_add_entry_transition, controller_remove_entry_transition, "
         "controller_add_layer, controller_remove_layer, controller_set_layer_weight, "
         "controller_create_blend_tree_1d, controller_create_blend_tree_2d, "
         "controller_add_blend_tree_child, controller_add_blend_tree_child_tree\n"

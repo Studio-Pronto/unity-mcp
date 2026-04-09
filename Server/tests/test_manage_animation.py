@@ -79,6 +79,8 @@ class TestActionLists:
                     "controller_remove_transition", "controller_remove_parameter",
                     "controller_modify_state", "controller_modify_transition",
                     "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
+                    "controller_modify_sub_state_machine",
+                    "controller_add_entry_transition", "controller_remove_entry_transition",
                     "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
                     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
                     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree"}
@@ -702,6 +704,75 @@ class TestSubStateMachineCLICommands:
                 assert params["action"] == "controller_add_state"
                 assert params["properties"]["stateName"] == "Combat/Attack"
                 assert params["clipPath"] == "Assets/Anim/Attack.anim"
+
+    def test_modify_sub_state_machine_rename(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "modify-sub-state-machine", "Assets/Anim/Player.controller", "Combat",
+                    "--new-name", "Battle",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_modify_sub_state_machine"
+                assert params["properties"]["name"] == "Combat"
+                assert params["properties"]["newName"] == "Battle"
+
+    def test_modify_sub_state_machine_default_state(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "modify-sub-state-machine", "Assets/Anim/Player.controller", "Combat",
+                    "--default-state", "Block",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_modify_sub_state_machine"
+                assert params["properties"]["defaultState"] == "Block"
+
+    def test_modify_sub_state_machine_position(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "modify-sub-state-machine", "Assets/Anim/Player.controller", "Combat",
+                    "--position", "[300, 100]",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_modify_sub_state_machine"
+                assert params["properties"]["position"] == [300, 100]
+
+    def test_add_entry_transition_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-entry-transition", "Assets/Anim/Player.controller", "Walk",
+                    "--state-machine-path", "Locomotion",
+                    "--conditions", '[{"parameter":"Speed","mode":"greater","threshold":0.1}]',
+                ])
+
+                mock_run.assert_called_once()
+                assert mock_run.call_args[0][0] == "manage_animation"
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_add_entry_transition"
+                assert params["controllerPath"] == "Assets/Anim/Player.controller"
+                assert params["properties"]["toState"] == "Walk"
+                assert params["properties"]["stateMachinePath"] == "Locomotion"
+                assert params["properties"]["conditions"][0]["parameter"] == "Speed"
+
+    def test_remove_entry_transition_builds_correct_params(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "remove-entry-transition", "Assets/Anim/Player.controller", "Walk",
+                    "--state-machine-path", "Locomotion",
+                ])
+
+                mock_run.assert_called_once()
+                params = _get_params(mock_run)
+                assert params["action"] == "controller_remove_entry_transition"
+                assert params["properties"]["toState"] == "Walk"
+                assert params["properties"]["stateMachinePath"] == "Locomotion"
 
 
 # =============================================================================
