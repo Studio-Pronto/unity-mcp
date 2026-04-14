@@ -59,7 +59,6 @@ namespace MCPForUnity.Editor.Tools.Animation
             { "state_machine_path", "stateMachinePath" },
             { "new_name", "newName" },
             { "default_state", "defaultState" },
-            { "to_state", "toState" },
         };
 
         private static JObject NormalizeParams(JObject source)
