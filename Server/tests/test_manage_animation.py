@@ -431,6 +431,27 @@ class TestControllerCLICommands:
                 assert len(params["properties"]["conditions"]) == 1
                 assert params["properties"]["conditions"][0]["parameter"] == "Speed"
 
+    def test_controller_add_transition_with_transition_properties(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-transition", "Assets/Anim/Player.controller",
+                    "Idle", "Walk",
+                    "--no-exit-time", "--duration", "0.1",
+                    "--offset", "0.05",
+                    "--has-fixed-duration",
+                    "--interruption-source", "source",
+                    "--no-ordered-interruption",
+                    "--no-transition-to-self",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["properties"]["offset"] == 0.05
+                assert params["properties"]["hasFixedDuration"] is True
+                assert params["properties"]["interruptionSource"] == "source"
+                assert params["properties"]["orderedInterruption"] is False
+                assert params["properties"]["canTransitionToSelf"] is False
+
     def test_controller_add_parameter_builds_correct_params(self, runner, mock_config, mock_success):
         with patch("cli.commands.animation.get_config", return_value=mock_config):
             with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
@@ -642,6 +663,20 @@ class TestControllerCLICommands:
 
                 params = _get_params(mock_run)
                 assert params["properties"]["transitionIndex"] == 1
+
+    def test_controller_modify_transition_with_interruption_properties(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "modify-transition", "Assets/Anim/Player.controller",
+                    "Idle", "Walk",
+                    "--interruption-source", "sourceThenDestination",
+                    "--ordered-interruption",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["properties"]["interruptionSource"] == "sourceThenDestination"
+                assert params["properties"]["orderedInterruption"] is True
 
 
 # =============================================================================

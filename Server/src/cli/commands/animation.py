@@ -756,10 +756,18 @@ def controller_add_state(controller_path: str, state_name: str, clip_path: Optio
 @click.argument("to_state")
 @click.option("--has-exit-time/--no-exit-time", default=True, help="Whether transition uses exit time.")
 @click.option("--duration", "-d", default=0.25, type=float, help="Transition duration.")
+@click.option("--offset", default=None, type=float, help="Start time offset in destination state.")
+@click.option("--has-fixed-duration/--no-fixed-duration", default=None, help="Duration in seconds (true) or normalized (false).")
+@click.option("--interruption-source", default=None, type=click.Choice(["none", "source", "destination", "sourceThenDestination", "destinationThenSource"], case_sensitive=False), help="Transition interruption source.")
+@click.option("--ordered-interruption/--no-ordered-interruption", default=None, help="Ordered interruption.")
+@click.option("--can-transition-to-self/--no-transition-to-self", default=None, help="Can transition fire to itself.")
 @click.option("--conditions", "-c", default=None, help='Conditions as JSON: [{"parameter":"Speed","mode":"greater","threshold":0.1}]')
 @click.option("--layer-index", default=0, type=int, help="Layer index.")
 @handle_unity_errors
-def controller_add_transition(controller_path: str, from_state: str, to_state: str, has_exit_time: bool, duration: float, conditions: Optional[str], layer_index: int):
+def controller_add_transition(controller_path: str, from_state: str, to_state: str, has_exit_time: bool, duration: float,
+                              offset: Optional[float], has_fixed_duration: Optional[bool], interruption_source: Optional[str],
+                              ordered_interruption: Optional[bool], can_transition_to_self: Optional[bool],
+                              conditions: Optional[str], layer_index: int):
     """Add a transition between states in an AnimatorController.
 
     \b
@@ -778,6 +786,16 @@ def controller_add_transition(controller_path: str, from_state: str, to_state: s
         "duration": duration,
         "layerIndex": layer_index,
     }
+    if offset is not None:
+        params["offset"] = offset
+    if has_fixed_duration is not None:
+        params["hasFixedDuration"] = has_fixed_duration
+    if interruption_source is not None:
+        params["interruptionSource"] = interruption_source
+    if ordered_interruption is not None:
+        params["orderedInterruption"] = ordered_interruption
+    if can_transition_to_self is not None:
+        params["canTransitionToSelf"] = can_transition_to_self
     if conditions:
         params["conditions"] = parse_json_list_or_exit(conditions, "conditions")
 
@@ -983,6 +1001,8 @@ def controller_modify_state(controller_path: str, state_name: str, tag: Optional
 @click.option("--duration", "-d", default=None, type=float, help="Transition duration.")
 @click.option("--offset", default=None, type=float, help="Start time offset in destination state.")
 @click.option("--has-fixed-duration/--no-fixed-duration", default=None, help="Duration in seconds (true) or normalized (false).")
+@click.option("--interruption-source", default=None, type=click.Choice(["none", "source", "destination", "sourceThenDestination", "destinationThenSource"], case_sensitive=False), help="Transition interruption source.")
+@click.option("--ordered-interruption/--no-ordered-interruption", default=None, help="Ordered interruption.")
 @click.option("--can-transition-to-self/--no-transition-to-self", default=None, help="Can transition fire to itself.")
 @click.option("--conditions", "-c", default=None, help='Conditions as JSON array (replaces existing): [{"parameter":"Speed","mode":"greater","threshold":0.1}]')
 @click.option("--transition-index", default=0, type=int, help="Index of transition to modify (when multiple exist between same states).")
@@ -990,7 +1010,8 @@ def controller_modify_state(controller_path: str, state_name: str, tag: Optional
 @handle_unity_errors
 def controller_modify_transition(controller_path: str, from_state: str, to_state: str, has_exit_time: Optional[bool],
                                  exit_time: Optional[float], duration: Optional[float], offset: Optional[float],
-                                 has_fixed_duration: Optional[bool], can_transition_to_self: Optional[bool],
+                                 has_fixed_duration: Optional[bool], interruption_source: Optional[str],
+                                 ordered_interruption: Optional[bool], can_transition_to_self: Optional[bool],
                                  conditions: Optional[str], transition_index: int, layer_index: int):
     """Modify properties on an existing transition.
 
@@ -1020,6 +1041,10 @@ def controller_modify_transition(controller_path: str, from_state: str, to_state
         params["offset"] = offset
     if has_fixed_duration is not None:
         params["hasFixedDuration"] = has_fixed_duration
+    if interruption_source is not None:
+        params["interruptionSource"] = interruption_source
+    if ordered_interruption is not None:
+        params["orderedInterruption"] = ordered_interruption
     if can_transition_to_self is not None:
         params["canTransitionToSelf"] = can_transition_to_self
     if conditions is not None:

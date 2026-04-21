@@ -191,6 +191,29 @@ namespace MCPForUnity.Editor.Tools.Animation
             float exitTime = @params["exitTime"]?.ToObject<float>() ?? 0.75f;
             transition.exitTime = exitTime;
 
+            if (@params["offset"] != null)
+                transition.offset = @params["offset"].ToObject<float>();
+            if (@params["hasFixedDuration"] != null)
+                transition.hasFixedDuration = @params["hasFixedDuration"].ToObject<bool>();
+            if (@params["interruptionSource"] != null)
+            {
+                string srcStr = @params["interruptionSource"].ToString().ToLowerInvariant();
+                switch (srcStr)
+                {
+                    case "none": transition.interruptionSource = TransitionInterruptionSource.None; break;
+                    case "source": transition.interruptionSource = TransitionInterruptionSource.Source; break;
+                    case "destination": transition.interruptionSource = TransitionInterruptionSource.Destination; break;
+                    case "sourcethendestination": transition.interruptionSource = TransitionInterruptionSource.SourceThenDestination; break;
+                    case "destinationthensource": transition.interruptionSource = TransitionInterruptionSource.DestinationThenSource; break;
+                    default:
+                        return new { success = false, message = $"Unknown interruptionSource '{srcStr}'. Valid: none, source, destination, sourceThenDestination, destinationThenSource" };
+                }
+            }
+            if (@params["orderedInterruption"] != null)
+                transition.orderedInterruption = @params["orderedInterruption"].ToObject<bool>();
+            if (@params["canTransitionToSelf"] != null)
+                transition.canTransitionToSelf = @params["canTransitionToSelf"].ToObject<bool>();
+
             // Add conditions
             JToken conditionsToken = @params["conditions"];
             int conditionCount = 0;
