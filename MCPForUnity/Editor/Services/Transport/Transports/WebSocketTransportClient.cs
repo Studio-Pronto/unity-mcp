@@ -175,6 +175,11 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
         /// </summary>
         public void ForceStop()
         {
+            // Best-effort: tell the server we're about to vanish so it can hold the
+            // last-known phase ("compiling"/"domain_reload") on its sticky cache
+            // and surface it to clients instead of a generic "no_unity_session".
+            try { SendBridgeStatusSync("reloading", 300); } catch { }
+
             try { _lifecycleCts?.Cancel(); } catch { }
             try { _connectionCts?.Cancel(); } catch { }
 
@@ -748,6 +753,58 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             finally
             {
                 _sendLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Best-effort synchronous send of a bridge_status frame. Intended for
+        /// use during <c>beforeAssemblyReload</c> where async is not available
+        /// and the socket is about to be aborted. Returns without error on any
+        /// failure — the server handles ungraceful disconnects anyway.
+        /// </summary>
+        private void SendBridgeStatusSync(string state, int timeoutMs)
+        {
+            var socket = _socket;
+            if (socket == null || socket.State != WebSocketState.Open)
+            {
+                return;
+            }
+
+            string json = new JObject
+            {
+                ["type"] = "bridge_status",
+                ["state"] = state,
+                ["session_id"] = _sessionId,
+                ["project_hash"] = _projectHash,
+                ["activity_phase"] = EditorStateCache.LastActivityPhase,
+            }.ToString(Formatting.None);
+            byte[] bytes = Encoding.UTF8.GetBytes(json);
+            var buffer = new ArraySegment<byte>(bytes);
+
+            if (!_sendLock.Wait(timeoutMs))
+            {
+                return;
+            }
+            try
+            {
+                if (socket.State != WebSocketState.Open)
+                {
+                    return;
+                }
+
+                using var cts = new CancellationTokenSource(timeoutMs);
+                try
+                {
+                    socket.SendAsync(buffer, WebSocketMessageType.Text, true, cts.Token).Wait(timeoutMs);
+                }
+                catch
+                {
+                    // Best-effort; the socket is about to be aborted anyway.
+                }
+            }
+            finally
+            {
+                try { _sendLock.Release(); } catch { }
             }
         }
 

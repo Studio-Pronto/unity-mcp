@@ -28,6 +28,7 @@ from transport.models import (
     RegisterToolsMessage,
     CommandResultMessage,
     PongMessage,
+    BridgeStatusMessage,
     SessionList,
     SessionDetails,
 )
@@ -1336,9 +1337,11 @@ class TestPluginHubActivityPhase:
         PluginHub.configure(plugin_registry, loop)
         PluginHub._last_activity_phase.clear()
         PluginHub._last_pong.clear()
+        PluginHub._sticky_phase_by_project.clear()
         yield
         PluginHub._last_activity_phase.clear()
         PluginHub._last_pong.clear()
+        PluginHub._sticky_phase_by_project.clear()
         PluginHub._registry = None
         PluginHub._lock = None
         PluginHub._loop = None
@@ -1448,6 +1451,144 @@ class TestPluginHubActivityPhase:
                 reason = "unity is busy"
 
         assert reason == "unity is busy"
+
+
+# ============================================================================
+# STICKY PHASE ACROSS DISCONNECT (Issue #657)
+# ============================================================================
+
+
+class TestStickyPhaseAcrossDisconnect:
+    """Post-disconnect error responses should retain 'compiling' / 'domain_reload'."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_hub(self, plugin_registry):
+        loop = asyncio.new_event_loop()
+        PluginHub.configure(plugin_registry, loop)
+        PluginHub._last_activity_phase.clear()
+        PluginHub._last_pong.clear()
+        PluginHub._sticky_phase_by_project.clear()
+        yield
+        PluginHub._last_activity_phase.clear()
+        PluginHub._last_pong.clear()
+        PluginHub._sticky_phase_by_project.clear()
+        PluginHub._registry = None
+        PluginHub._lock = None
+        PluginHub._loop = None
+        loop.close()
+
+    @pytest.mark.asyncio
+    async def test_persist_sticky_phase_stores_interesting_phase(self, plugin_registry):
+        sid = "sess-sticky-1"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h-sticky-1", unity_version="2022.3")
+        PluginHub._last_activity_phase[sid] = "compiling"
+
+        await PluginHub._persist_sticky_phase(sid)
+
+        assert "h-sticky-1" in PluginHub._sticky_phase_by_project
+        stored_phase, _ = PluginHub._sticky_phase_by_project["h-sticky-1"]
+        assert stored_phase == "compiling"
+
+    @pytest.mark.asyncio
+    async def test_persist_sticky_phase_ignores_idle(self, plugin_registry):
+        sid = "sess-sticky-2"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h-sticky-2", unity_version="2022.3")
+        PluginHub._last_activity_phase[sid] = "idle"
+
+        await PluginHub._persist_sticky_phase(sid)
+
+        assert "h-sticky-2" not in PluginHub._sticky_phase_by_project
+
+    @pytest.mark.asyncio
+    async def test_persist_sticky_phase_noop_when_unregistered(self, plugin_registry):
+        sid = "sess-sticky-3"
+        PluginHub._last_activity_phase[sid] = "compiling"
+        # Intentionally skip registry.register to mimic a session that just got unregistered
+
+        await PluginHub._persist_sticky_phase(sid)
+
+        assert not PluginHub._sticky_phase_by_project
+
+    def test_unavailable_retry_response_without_hash_falls_back_to_generic(self):
+        response = PluginHub._unavailable_retry_response(reason="no_unity_session")
+        assert response["success"] is False
+        assert response["hint"] == "retry"
+        assert response["data"]["reason"] == "no_unity_session"
+        assert response["data"]["activity_phase"] is None
+        assert response["data"]["retry_after_ms"] == 250
+
+    def test_unavailable_retry_response_uses_sticky_phase(self):
+        import time
+        PluginHub._sticky_phase_by_project["h-err-1"] = ("compiling", time.monotonic())
+
+        response = PluginHub._unavailable_retry_response(
+            reason="no_unity_session", project_hash="h-err-1")
+
+        assert response["success"] is False
+        assert response["hint"] == "retry"
+        assert response["data"]["reason"] == "unity_compiling"
+        assert response["data"]["activity_phase"] == "compiling"
+        assert response["data"]["retry_after_ms"] == 2000
+        assert "compiling" in response["error"]
+
+    def test_unavailable_retry_response_respects_ttl(self):
+        import time
+        stale_time = time.monotonic() - (PluginHub.STICKY_PHASE_TTL_S + 5)
+        PluginHub._sticky_phase_by_project["h-err-2"] = ("compiling", stale_time)
+
+        response = PluginHub._unavailable_retry_response(
+            reason="no_unity_session", project_hash="h-err-2")
+
+        assert response["data"]["activity_phase"] is None
+        assert response["data"]["retry_after_ms"] == 250
+        # TTL-expired entries should be evicted on read
+        assert "h-err-2" not in PluginHub._sticky_phase_by_project
+
+    def test_unavailable_retry_response_missing_hash_is_generic(self):
+        import time
+        PluginHub._sticky_phase_by_project["other-hash"] = ("compiling", time.monotonic())
+
+        response = PluginHub._unavailable_retry_response(
+            reason="no_unity_session", project_hash="h-missing")
+
+        assert response["data"]["activity_phase"] is None
+        assert response["data"]["retry_after_ms"] == 250
+
+    @pytest.mark.asyncio
+    async def test_handle_bridge_status_updates_both_caches(self, plugin_registry):
+        sid = "sess-bs-1"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h-bs-1", unity_version="2022.3")
+
+        hub = PluginHub.__new__(PluginHub)
+        await hub._handle_bridge_status(BridgeStatusMessage(
+            state="reloading",
+            session_id=sid,
+            project_hash="h-bs-1",
+            activity_phase="domain_reload",
+        ))
+
+        assert PluginHub._last_activity_phase[sid] == "domain_reload"
+        assert PluginHub._sticky_phase_by_project["h-bs-1"][0] == "domain_reload"
+
+    @pytest.mark.asyncio
+    async def test_handle_bridge_status_skips_idle_for_sticky(self, plugin_registry):
+        sid = "sess-bs-2"
+        await plugin_registry.register(
+            session_id=sid, project_name="P", project_hash="h-bs-2", unity_version="2022.3")
+
+        hub = PluginHub.__new__(PluginHub)
+        await hub._handle_bridge_status(BridgeStatusMessage(
+            state="reloading",
+            session_id=sid,
+            project_hash="h-bs-2",
+            activity_phase="idle",
+        ))
+
+        assert PluginHub._last_activity_phase[sid] == "idle"
+        assert "h-bs-2" not in PluginHub._sticky_phase_by_project
 
 
 # ============================================================================

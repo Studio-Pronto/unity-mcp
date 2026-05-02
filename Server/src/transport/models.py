@@ -50,6 +50,15 @@ class PongMessage(BaseModel):
     activity_phase: str | None = None
 
 
+class BridgeStatusMessage(BaseModel):
+    """Pre-disconnect signal from the plugin (e.g. before domain reload)."""
+    type: str = "bridge_status"
+    state: str
+    session_id: str | None = None
+    project_hash: str | None = None
+    activity_phase: str | None = None
+
+
 class CommandResultMessage(BaseModel):
     type: str = "command_result"
     id: str

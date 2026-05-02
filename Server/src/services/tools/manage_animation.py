@@ -58,7 +58,12 @@ CLIP_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("clip_")]
         "CLIP (asset): clip_create, clip_get_info, clip_add_curve, clip_set_curve, "
         "clip_set_vector_curve, clip_create_preset, clip_assign, clip_add_event, clip_remove_event\n\n"
         "States in sub-state machines use path notation: 'SubMachine/StateName'.\n"
-        "Action-specific parameters go in `properties` (keys match ManageAnimation.cs)."
+        "Action-specific parameters go in `properties`.\n\n"
+        "TRANSITION PROPERTIES (controller_add_transition / controller_modify_transition):\n"
+        "  fromState, toState (required), layerIndex, hasExitTime, exitTime, duration, offset,\n"
+        "  hasFixedDuration, interruptionSource (none|source|destination|sourceThenDestination|destinationThenSource),\n"
+        "  orderedInterruption, canTransitionToSelf, conditions ([{parameter, mode, threshold}]).\n"
+        "  modify_transition also accepts transitionIndex (default 0) to disambiguate."
     ),
     annotations=ToolAnnotations(
         title="Manage Animation",

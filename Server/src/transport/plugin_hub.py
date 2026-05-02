@@ -29,6 +29,7 @@ from transport.models import (
     RegisterMessage,
     RegisterToolsMessage,
     PongMessage,
+    BridgeStatusMessage,
     CommandResultMessage,
     SessionList,
     SessionDetails,
@@ -121,6 +122,14 @@ class PluginHub(WebSocketEndpoint):
     _last_pong: ClassVar[dict[str, float]] = {}
     # session_id -> last reported activity phase (e.g. "compiling", "domain_reload", "idle")
     _last_activity_phase: ClassVar[dict[str, str]] = {}
+    # project_hash -> (phase, monotonic_seconds). Sticky across session disconnect
+    # so post-disconnect errors can say "Unity is compiling" rather than a generic
+    # "no_unity_session". See Issue #657.
+    _sticky_phase_by_project: ClassVar[dict[str, tuple[str, float]]] = {}
+    STICKY_PHASE_TTL_S: ClassVar[float] = 120.0
+    _STICKY_PHASES: ClassVar[frozenset[str]] = frozenset(
+        {"compiling", "domain_reload", "asset_import", "running_tests"}
+    )
     # session_id -> ping task
     _ping_tasks: ClassVar[dict[str, asyncio.Task]] = {}
 
@@ -209,6 +218,8 @@ class PluginHub(WebSocketEndpoint):
                 await self._handle_register_tools(websocket, RegisterToolsMessage(**data))
             elif message_type == "pong":
                 await self._handle_pong(PongMessage(**data))
+            elif message_type == "bridge_status":
+                await self._handle_bridge_status(BridgeStatusMessage(**data))
             elif message_type == "command_result":
                 await self._handle_command_result(CommandResultMessage(**data))
             else:
@@ -226,6 +237,10 @@ class PluginHub(WebSocketEndpoint):
             session_id = next(
                 (sid for sid, ws in cls._connections.items() if ws is websocket), None)
             if session_id:
+                # Preserve interesting activity phase on the sticky per-project cache
+                # so subsequent requests can report "Unity is compiling" rather than
+                # a generic "no_unity_session" while Unity is reloading.
+                await cls._persist_sticky_phase(session_id)
                 cls._connections.pop(session_id, None)
                 # Stop the ping loop for this session
                 ping_task = cls._ping_tasks.pop(session_id, None)
@@ -272,7 +287,13 @@ class PluginHub(WebSocketEndpoint):
     # Public API
     # ------------------------------------------------------------------
     @classmethod
-    async def send_command(cls, session_id: str, command_type: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def send_command(
+        cls,
+        session_id: str,
+        command_type: str,
+        params: dict[str, Any],
+        project_hash: str | None = None,
+    ) -> dict[str, Any]:
         websocket = await cls._get_connection(session_id)
         command_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -335,8 +356,11 @@ class PluginHub(WebSocketEndpoint):
             try:
                 result = await asyncio.wait_for(future, timeout=server_wait_s)
                 return result
-            except PluginDisconnectedError as exc:
-                return MCPResponse(success=False, error=str(exc), hint="retry").model_dump()
+            except PluginDisconnectedError:
+                return cls._unavailable_retry_response(
+                    reason="plugin_disconnected",
+                    project_hash=project_hash,
+                )
             except asyncio.TimeoutError:
                 if command_type in cls._FAST_FAIL_COMMANDS:
                     return MCPResponse(
@@ -452,6 +476,13 @@ class PluginHub(WebSocketEndpoint):
                 if old_ping and not old_ping.done():
                     old_ping.cancel()
                 cls._last_pong.pop(evicted_session_id, None)
+                # Hand the evicted session's phase to the new session's project
+                # hash so a reload-reconnect race still surfaces "compiling".
+                evicted_phase = cls._last_activity_phase.pop(evicted_session_id, None)
+                if evicted_phase and evicted_phase in cls._STICKY_PHASES:
+                    cls._sticky_phase_by_project[project_hash] = (
+                        evicted_phase, time.monotonic()
+                    )
                 cancelled_commands = []
                 for command_id, entry in list(cls._pending.items()):
                     if entry.get("session_id") == evicted_session_id:
@@ -689,6 +720,68 @@ class PluginHub(WebSocketEndpoint):
                     if payload.activity_phase:
                         cls._last_activity_phase[session_id] = payload.activity_phase
 
+    async def _handle_bridge_status(self, payload: BridgeStatusMessage) -> None:
+        """Handle a pre-disconnect status frame sent by the plugin.
+
+        Emitted by the Unity plugin before it tears down the WebSocket (e.g.
+        during ``beforeAssemblyReload``), so the server can preserve the phase
+        on the sticky per-project cache even if we never receive another pong.
+        """
+        cls = type(self)
+        lock = cls._lock
+        if lock is None:
+            return
+        session_id = payload.session_id
+        phase = payload.activity_phase
+        project_hash = payload.project_hash
+        async with lock:
+            if session_id and phase:
+                cls._last_activity_phase[session_id] = phase
+            if (
+                payload.state == "reloading"
+                and project_hash
+                and phase
+                and phase in cls._STICKY_PHASES
+            ):
+                cls._sticky_phase_by_project[project_hash] = (
+                    phase, time.monotonic())
+
+    @classmethod
+    async def _persist_sticky_phase(cls, session_id: str) -> None:
+        """Copy the current phase for *session_id* into the per-project cache.
+
+        Call this while the hub lock is held, *before* popping
+        ``_last_activity_phase[session_id]``. Idempotent for uninteresting
+        phases (e.g. ``idle``) — they are not cached.
+        """
+        phase = cls._last_activity_phase.get(session_id)
+        if not phase or phase not in cls._STICKY_PHASES:
+            return
+        if cls._registry is None:
+            return
+        session = await cls._registry.get_session(session_id)
+        if session is None:
+            return
+        cls._sticky_phase_by_project[session.project_hash] = (
+            phase, time.monotonic())
+
+    @classmethod
+    def _lookup_sticky_phase(cls, project_hash: str | None) -> str | None:
+        """Return the sticky phase for *project_hash* if fresh, else None.
+
+        Expired entries are evicted as a side-effect.
+        """
+        if not project_hash:
+            return None
+        entry = cls._sticky_phase_by_project.get(project_hash)
+        if not entry:
+            return None
+        phase, stored_at = entry
+        if time.monotonic() - stored_at > cls.STICKY_PHASE_TTL_S:
+            cls._sticky_phase_by_project.pop(project_hash, None)
+            return None
+        return phase
+
     @classmethod
     async def _ping_loop(cls, session_id: str, websocket: WebSocket) -> None:
         """Server-initiated ping loop to detect dead connections.
@@ -772,6 +865,7 @@ class PluginHub(WebSocketEndpoint):
         ping_task: asyncio.Task | None = None
         pending_futures: list[asyncio.Future] = []
         async with lock:
+            await cls._persist_sticky_phase(session_id)
             websocket = cls._connections.pop(session_id, None)
             ping_task = cls._ping_tasks.pop(session_id, None)
             cls._last_pong.pop(session_id, None)
@@ -849,13 +943,40 @@ class PluginHub(WebSocketEndpoint):
         await cls._evict_connection(session_id, "stale_websocket_state")
         return False
 
-    @staticmethod
-    def _unavailable_retry_response(reason: str = "no_unity_session") -> dict[str, Any]:
+    @classmethod
+    def _unavailable_retry_response(
+        cls,
+        reason: str = "no_unity_session",
+        project_hash: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a retry response, enriched with sticky-cache phase if known.
+
+        When the plugin was compiling/reloading at last contact, callers get a
+        structured hint (``activity_phase``) and a longer ``retry_after_ms`` so
+        they can distinguish "Unity is busy" from "Unity is gone".
+        """
+        phase = cls._lookup_sticky_phase(project_hash)
+        if phase:
+            display = phase.replace("_", " ")
+            return MCPResponse(
+                success=False,
+                error=f"Unity is {display}; please retry",
+                hint="retry",
+                data={
+                    "reason": f"unity_{phase}",
+                    "activity_phase": phase,
+                    "retry_after_ms": 2000,
+                },
+            ).model_dump()
         return MCPResponse(
             success=False,
             error="Unity session not available; please retry",
             hint="retry",
-            data={"reason": reason, "retry_after_ms": 250},
+            data={
+                "reason": reason,
+                "activity_phase": None,
+                "retry_after_ms": 250,
+            },
         ).model_dump()
 
     # ------------------------------------------------------------------
@@ -1015,6 +1136,17 @@ class PluginHub(WebSocketEndpoint):
             user_id: User ID for session isolation in remote-hosted mode
             retry_on_reload: If False, do not wait for session reconnect on reload.
         """
+        # Extract project hash from the instance id so retry responses can
+        # include the sticky-cached activity phase (e.g. "compiling") even
+        # when the session is gone.
+        target_hash: str | None = None
+        if unity_instance:
+            if "@" in unity_instance:
+                _, _, suffix = unity_instance.rpartition("@")
+                target_hash = suffix or None
+            else:
+                target_hash = unity_instance
+
         try:
             session_id = await cls._resolve_session_id(
                 unity_instance,
@@ -1027,11 +1159,13 @@ class PluginHub(WebSocketEndpoint):
                 command_type,
                 unity_instance or "default",
             )
-            return cls._unavailable_retry_response("no_unity_session")
+            return cls._unavailable_retry_response(
+                "no_unity_session", project_hash=target_hash)
 
         if not await cls._ensure_live_connection(session_id):
             if not retry_on_reload:
-                return cls._unavailable_retry_response("stale_connection")
+                return cls._unavailable_retry_response(
+                    "stale_connection", project_hash=target_hash)
             try:
                 session_id = await cls._resolve_session_id(
                     unity_instance,
@@ -1039,9 +1173,11 @@ class PluginHub(WebSocketEndpoint):
                     retry_on_reload=True,
                 )
             except NoUnitySessionError:
-                return cls._unavailable_retry_response("no_unity_session")
+                return cls._unavailable_retry_response(
+                    "no_unity_session", project_hash=target_hash)
             if not await cls._ensure_live_connection(session_id):
-                return cls._unavailable_retry_response("stale_connection")
+                return cls._unavailable_retry_response(
+                    "stale_connection", project_hash=target_hash)
 
         # During domain reload / immediate reconnect windows, the plugin may be connected but not yet
         # ready to process execute commands on the Unity main thread (which can be further delayed when
@@ -1064,7 +1200,8 @@ class PluginHub(WebSocketEndpoint):
                 deadline = time.monotonic() + max_wait_s
                 while time.monotonic() < deadline:
                     try:
-                        probe = await cls.send_command(session_id, "ping", {})
+                        probe = await cls.send_command(
+                            session_id, "ping", {}, project_hash=target_hash)
                     except Exception:
                         probe = None
 
@@ -1094,7 +1231,8 @@ class PluginHub(WebSocketEndpoint):
                         data={"reason": reason, "retry_after_ms": 1000},
                     ).model_dump()
 
-        return await cls.send_command(session_id, command_type, params)
+        return await cls.send_command(
+            session_id, command_type, params, project_hash=target_hash)
 
     # ------------------------------------------------------------------
     # Blocking helpers for synchronous tool code
