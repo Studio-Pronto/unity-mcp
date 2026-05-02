@@ -15,14 +15,16 @@ AnimationAction = Literal[
     "animator_set_parameter", "animator_set_speed", "animator_set_enabled",
     # Controller (asset)
     "controller_create", "controller_add_state", "controller_add_transition",
-    "controller_add_parameter", "controller_get_info", "controller_assign",
+    "controller_add_parameter", "controller_modify_parameter",
+    "controller_get_info", "controller_assign",
     "controller_set_state_motion", "controller_remove_state",
     "controller_remove_transition", "controller_remove_parameter",
     "controller_modify_state", "controller_modify_transition",
     "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
     "controller_modify_sub_state_machine",
     "controller_add_entry_transition", "controller_remove_entry_transition",
-    "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
+    "controller_add_layer", "controller_remove_layer", "controller_rename_layer",
+    "controller_set_layer_weight",
     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree",
     # Clip (asset)
@@ -48,22 +50,58 @@ CLIP_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("clip_")]
         "CONTROLLER (asset): controller_create, controller_get_info, controller_assign, "
         "controller_add_state, controller_remove_state, controller_modify_state, "
         "controller_set_state_motion, controller_add_transition, controller_remove_transition, "
-        "controller_modify_transition, controller_add_parameter, controller_remove_parameter, "
+        "controller_modify_transition, controller_add_parameter, controller_modify_parameter, "
+        "controller_remove_parameter, "
         "controller_add_sub_state_machine, controller_remove_sub_state_machine, "
         "controller_modify_sub_state_machine, "
         "controller_add_entry_transition, controller_remove_entry_transition, "
-        "controller_add_layer, controller_remove_layer, controller_set_layer_weight, "
+        "controller_add_layer, controller_remove_layer, controller_rename_layer, controller_set_layer_weight, "
         "controller_create_blend_tree_1d, controller_create_blend_tree_2d, "
         "controller_add_blend_tree_child, controller_add_blend_tree_child_tree\n"
         "CLIP (asset): clip_create, clip_get_info, clip_add_curve, clip_set_curve, "
         "clip_set_vector_curve, clip_create_preset, clip_assign, clip_add_event, clip_remove_event\n\n"
-        "States in sub-state machines use path notation: 'SubMachine/StateName'.\n"
-        "Action-specific parameters go in `properties`.\n\n"
+        "Top-level params: `controller_path` (controller_*), `clip_path` + `clip_name` (clip_*), "
+        "`target` + `search_method` (animator_*). Action-specific params go in `properties` "
+        "(snake_case and camelCase both accepted).\n\n"
+        "STATE PROPERTIES (controller_add_state / controller_modify_state):\n"
+        "  stateName (required, supports path 'Sub/Inner'), layerIndex (default 0),\n"
+        "  clipPath, clipName (FBX sub-clip), speed, tag, isDefault,\n"
+        "  writeDefaultValues, iKOnFeet, mirror, cycleOffset,\n"
+        "  speedParameter, cycleOffsetParameter, mirrorParameter, timeParameter,\n"
+        "  newName (modify_state only — preserves AnimatorState fileID; transitions survive).\n"
         "TRANSITION PROPERTIES (controller_add_transition / controller_modify_transition):\n"
-        "  fromState, toState (required), layerIndex, hasExitTime, exitTime, duration, offset,\n"
-        "  hasFixedDuration, interruptionSource (none|source|destination|sourceThenDestination|destinationThenSource),\n"
-        "  orderedInterruption, canTransitionToSelf, conditions ([{parameter, mode, threshold}]).\n"
-        "  modify_transition also accepts transitionIndex (default 0) to disambiguate."
+        "  fromState, toState (required; toState may be a state OR sub-state machine),\n"
+        "  layerIndex, hasExitTime, exitTime, duration, offset, hasFixedDuration,\n"
+        "  interruptionSource (none|source|destination|sourceThenDestination|destinationThenSource),\n"
+        "  orderedInterruption, canTransitionToSelf,\n"
+        "  conditions ([{parameter, mode, threshold}]) — replaced wholesale on modify.\n"
+        "  modify_transition also accepts transitionIndex (default 0) to disambiguate.\n"
+        "PARAMETER PROPERTIES (controller_add_parameter / controller_modify_parameter / controller_remove_parameter):\n"
+        "  parameterName (required), parameterType (float|int|bool|trigger), defaultValue,\n"
+        "  newName (modify_parameter only — also rewrites all condition references),\n"
+        "  force (remove_parameter only — strip dangling refs; default false errors if any exist).\n"
+        "LAYER PROPERTIES (controller_add_layer / controller_set_layer_weight / controller_rename_layer):\n"
+        "  layerName or layerIndex, weight, blendingMode (override|additive),\n"
+        "  newName (rename_layer only).\n"
+        "SUB-STATE MACHINE PROPERTIES (controller_add_/modify_/remove_sub_state_machine):\n"
+        "  name (required, path), parentPath, newName (modify), defaultState (modify), position [x,y,z] (modify).\n"
+        "BLEND TREE PROPERTIES (controller_create_blend_tree_1d/2d, controller_add_blend_tree_child[_tree]):\n"
+        "  stateName, blendType, blendParameter, blendParameterX, blendParameterY,\n"
+        "  childTreeName, childBlendType, childBlendParameter[X|Y].\n"
+        "ENTRY TRANSITIONS (controller_add_entry_transition / controller_remove_entry_transition):\n"
+        "  stateMachinePath (default root), toState (required), conditions.\n\n"
+        "CONVENTIONS:\n"
+        "  Paths: '/' is canonical ('Idle/Idle_Standing'). '.' is also accepted on lookups\n"
+        "    (translated to '/' on miss). For state CREATION, always use '/'.\n"
+        "  AnyState as fromState: 'AnyState', 'Any', or 'Any State' (case-insensitive).\n"
+        "  Condition modes by parameter type:\n"
+        "    Bool/Trigger → 'if', 'ifNot' (also: true/false)\n"
+        "    Int          → 'equals', 'notEqual', 'greater', 'less'\n"
+        "    Float        → 'greater', 'less'\n"
+        "    Mismatched mode/type errors at validation time.\n"
+        "  Identity preservation: prefer controller_modify_state / controller_modify_parameter /\n"
+        "    controller_rename_layer for renames. Remove+add destroys the AnimatorState sub-asset\n"
+        "    (new fileID) and breaks external references like Timeline tracks and animation events."
     ),
     annotations=ToolAnnotations(
         title="Manage Animation",

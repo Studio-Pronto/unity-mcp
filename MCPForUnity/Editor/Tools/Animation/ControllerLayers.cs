@@ -130,6 +130,76 @@ namespace MCPForUnity.Editor.Tools.Animation
             };
         }
 
+        public static object RenameLayer(JObject @params)
+        {
+            string controllerPath = @params["controllerPath"]?.ToString();
+            if (string.IsNullOrEmpty(controllerPath))
+                return new { success = false, message = "'controllerPath' is required" };
+
+            controllerPath = AssetPathUtility.SanitizeAssetPath(controllerPath);
+            if (controllerPath == null)
+                return new { success = false, message = "Invalid asset path" };
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            if (controller == null)
+                return new { success = false, message = $"AnimatorController not found at '{controllerPath}'" };
+
+            int? layerIndex = @params["layerIndex"]?.ToObject<int?>();
+            string layerName = @params["layerName"]?.ToString();
+            string newName = @params["newName"]?.ToString();
+
+            if (string.IsNullOrEmpty(newName))
+                return new { success = false, message = "'newName' is required" };
+            if (!layerIndex.HasValue && string.IsNullOrEmpty(layerName))
+                return new { success = false, message = "Either 'layerIndex' or 'layerName' is required" };
+
+            var layers = controller.layers;
+            if (layerIndex.HasValue)
+            {
+                if (layerIndex.Value < 0 || layerIndex.Value >= layers.Length)
+                    return new { success = false, message = $"Layer index {layerIndex.Value} out of range (0-{layers.Length - 1})" };
+                layerName = layers[layerIndex.Value].name;
+            }
+            else
+            {
+                layerIndex = -1;
+                for (int i = 0; i < layers.Length; i++)
+                {
+                    if (layers[i].name == layerName) { layerIndex = i; break; }
+                }
+                if (layerIndex.Value < 0)
+                    return new { success = false, message = $"Layer '{layerName}' not found" };
+            }
+
+            for (int i = 0; i < layers.Length; i++)
+            {
+                if (i != layerIndex.Value && layers[i].name == newName)
+                    return new { success = false, message = $"Layer '{newName}' already exists" };
+            }
+
+            Undo.RecordObject(controller, "Rename Layer");
+            var layer = layers[layerIndex.Value];
+            layer.name = newName;
+            layers[layerIndex.Value] = layer;
+            controller.layers = layers;
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Renamed layer '{layerName}' → '{newName}'",
+                data = new
+                {
+                    controllerPath,
+                    layerIndex = layerIndex.Value,
+                    oldName = layerName,
+                    newName
+                }
+            };
+        }
+
         public static object SetLayerWeight(JObject @params)
         {
             string controllerPath = @params["controllerPath"]?.ToString();

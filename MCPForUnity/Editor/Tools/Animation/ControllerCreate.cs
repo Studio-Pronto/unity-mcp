@@ -80,9 +80,14 @@ namespace MCPForUnity.Editor.Tools.Animation
                     return new { success = false, message = $"Sub-state machine path '{smPath}' not found in layer {layerIndex}" };
             }
 
-            // Check for duplicate state name
-            if (FindState(rootStateMachine, stateName) != null)
-                return new { success = false, message = $"State '{stateName}' already exists in layer {layerIndex}" };
+            // Check for duplicate state name in the target state machine only.
+            // Same name in a sibling sub-state machine is allowed (Unity supports this);
+            // ambiguity is surfaced at transition-resolution time, not creation time.
+            foreach (var cs in targetMachine.states)
+            {
+                if (cs.state.name == actualStateName)
+                    return new { success = false, message = $"State '{actualStateName}' already exists in target state machine" };
+            }
 
             var state = targetMachine.AddState(actualStateName);
 
@@ -162,6 +167,23 @@ namespace MCPForUnity.Editor.Tools.Animation
                 if (toStateMachine == null)
                     return new { success = false, message = $"State or sub-state machine '{toStateName}' not found in layer {layerIndex}" };
             }
+            else
+            {
+                // Ambiguity: same name resolves as BOTH a state and a sub-state machine.
+                var maybeSm = FindStateMachine(rootStateMachine, toStateName);
+                if (maybeSm != null)
+                    return new { success = false, message = $"'{toStateName}' is ambiguous in layer {layerIndex}: matches both a state and a sub-state machine. Use a path like 'Parent/{toStateName}' to disambiguate." };
+            }
+
+            // Validate conditions UP FRONT so we never create a transition that can't be fully populated.
+            JToken conditionsToken = @params["conditions"];
+            List<(AnimatorConditionMode mode, float threshold, string paramName)> parsedConditions = null;
+            if (conditionsToken is JArray conditionsArray)
+            {
+                var (parsed, error) = ParseConditions(controller, conditionsArray);
+                if (error != null) return error;
+                parsedConditions = parsed;
+            }
 
             AnimatorStateTransition transition;
             if (isAnyState)
@@ -214,37 +236,11 @@ namespace MCPForUnity.Editor.Tools.Animation
             if (@params["canTransitionToSelf"] != null)
                 transition.canTransitionToSelf = @params["canTransitionToSelf"].ToObject<bool>();
 
-            // Add conditions
-            JToken conditionsToken = @params["conditions"];
             int conditionCount = 0;
-            if (conditionsToken is JArray conditionsArray)
+            if (parsedConditions != null)
             {
-                foreach (var condItem in conditionsArray)
+                foreach (var (mode, threshold, paramName) in parsedConditions)
                 {
-                    if (condItem is not JObject condObj) continue;
-
-                    string paramName = condObj["parameter"]?.ToString();
-                    if (string.IsNullOrEmpty(paramName)) continue;
-
-                    string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
-                    float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
-
-                    AnimatorConditionMode mode;
-                    switch (modeStr)
-                    {
-                        case "greater": mode = AnimatorConditionMode.Greater; break;
-                        case "less": mode = AnimatorConditionMode.Less; break;
-                        case "equals": mode = AnimatorConditionMode.Equals; break;
-                        case "notequal":
-                        case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
-                        case "if":
-                        case "true": mode = AnimatorConditionMode.If; break;
-                        case "ifnot":
-                        case "if_not":
-                        case "false": mode = AnimatorConditionMode.IfNot; break;
-                        default: mode = AnimatorConditionMode.Greater; break;
-                    }
-
                     transition.AddCondition(mode, threshold, paramName);
                     conditionCount++;
                 }
@@ -570,7 +566,32 @@ namespace MCPForUnity.Editor.Tools.Animation
             if (targetState == null)
                 return new { success = false, message = $"State '{stateName}' not found in layer {layerIndex}" };
 
+            var warnings = new List<string>();
+
+            // Pre-scan and clean transitions pointing at the about-to-be-removed state
+            // (Unity does not auto-clean inbound transitions on RemoveState).
+            int removedTransitions = CleanTransitionsToState(controller, targetState);
+            if (removedTransitions > 0)
+                warnings.Add($"Removed {removedTransitions} transition(s) pointing to '{stateName}'");
+
+            bool wasDefault = parentMachine.defaultState == targetState;
+
             parentMachine.RemoveState(targetState);
+
+            if (wasDefault)
+            {
+                var remaining = parentMachine.states;
+                if (remaining.Length > 0)
+                {
+                    parentMachine.defaultState = remaining[0].state;
+                    warnings.Add($"Reassigned defaultState to '{remaining[0].state.name}' (was '{stateName}')");
+                }
+                else
+                {
+                    parentMachine.defaultState = null;
+                    warnings.Add("Cleared defaultState (no states remaining in parent state machine)");
+                }
+            }
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
@@ -583,7 +604,10 @@ namespace MCPForUnity.Editor.Tools.Animation
                 {
                     stateName,
                     layerIndex,
-                    remainingStates = parentMachine.states.Length
+                    remainingStates = parentMachine.states.Length,
+                    removedTransitions,
+                    defaultStateReassigned = wasDefault,
+                    warnings = warnings.ToArray()
                 }
             };
         }
@@ -696,6 +720,101 @@ namespace MCPForUnity.Editor.Tools.Animation
             };
         }
 
+        public static object ModifyParameter(JObject @params)
+        {
+            var controller = LoadController(@params);
+            if (controller == null)
+                return ControllerNotFoundError(@params);
+
+            string paramName = @params["parameterName"]?.ToString();
+            if (string.IsNullOrEmpty(paramName))
+                return new { success = false, message = "'parameterName' is required" };
+
+            var allParams = controller.parameters;
+            int paramIndex = -1;
+            for (int i = 0; i < allParams.Length; i++)
+            {
+                if (allParams[i].name == paramName) { paramIndex = i; break; }
+            }
+            if (paramIndex < 0)
+                return new { success = false, message = $"Parameter '{paramName}' not found" };
+
+            var changed = new List<string>();
+            int referencesRewritten = 0;
+
+            string newName = @params["newName"]?.ToString();
+            if (!string.IsNullOrEmpty(newName) && newName != paramName)
+            {
+                for (int i = 0; i < allParams.Length; i++)
+                {
+                    if (i != paramIndex && allParams[i].name == newName)
+                        return new { success = false, message = $"Parameter '{newName}' already exists" };
+                }
+
+                allParams[paramIndex].name = newName;
+                controller.parameters = allParams;
+                referencesRewritten = RewriteParameterReferences(controller, paramName, newName);
+                paramName = newName;
+                changed.Add("name");
+            }
+
+            string typeStr = @params["parameterType"]?.ToString()?.ToLowerInvariant();
+            if (!string.IsNullOrEmpty(typeStr))
+            {
+                AnimatorControllerParameterType newType;
+                switch (typeStr)
+                {
+                    case "float": newType = AnimatorControllerParameterType.Float; break;
+                    case "int":
+                    case "integer": newType = AnimatorControllerParameterType.Int; break;
+                    case "bool": newType = AnimatorControllerParameterType.Bool; break;
+                    case "trigger": newType = AnimatorControllerParameterType.Trigger; break;
+                    default:
+                        return new { success = false, message = $"Unknown parameterType '{typeStr}'. Valid: float, int, bool, trigger" };
+                }
+                if (allParams[paramIndex].type != newType)
+                {
+                    allParams[paramIndex].type = newType;
+                    controller.parameters = allParams;
+                    changed.Add("type");
+                }
+            }
+
+            JToken defaultValueToken = @params["defaultValue"];
+            if (defaultValueToken != null)
+            {
+                var p = allParams[paramIndex];
+                switch (p.type)
+                {
+                    case AnimatorControllerParameterType.Float: p.defaultFloat = defaultValueToken.ToObject<float>(); break;
+                    case AnimatorControllerParameterType.Int: p.defaultInt = defaultValueToken.ToObject<int>(); break;
+                    case AnimatorControllerParameterType.Bool:
+                    case AnimatorControllerParameterType.Trigger: p.defaultBool = defaultValueToken.ToObject<bool>(); break;
+                }
+                allParams[paramIndex] = p;
+                controller.parameters = allParams;
+                changed.Add("defaultValue");
+            }
+
+            if (changed.Count == 0)
+                return new { success = false, message = "No recognized properties provided. Supported: newName, parameterType, defaultValue" };
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+
+            return new
+            {
+                success = true,
+                message = $"Modified parameter '{paramName}': {string.Join(", ", changed)}",
+                data = new
+                {
+                    parameterName = paramName,
+                    modifiedProperties = changed,
+                    referencesRewritten
+                }
+            };
+        }
+
         public static object RemoveParameter(JObject @params)
         {
             var controller = LoadController(@params);
@@ -720,6 +839,23 @@ namespace MCPForUnity.Editor.Tools.Animation
             if (paramIndex < 0)
                 return new { success = false, message = $"Parameter '{paramName}' not found" };
 
+            bool force = @params["force"]?.ToObject<bool>() ?? false;
+            int refCount = CountParameterReferences(controller, paramName, strip: false);
+
+            if (refCount > 0 && !force)
+                return new
+                {
+                    success = false,
+                    message = $"Cannot remove parameter '{paramName}': {refCount} reference(s) in transition conditions or state bindings. Pass `force: true` to strip references and remove, or use controller_modify_parameter to rename instead."
+                };
+
+            var warnings = new List<string>();
+            if (refCount > 0)
+            {
+                CountParameterReferences(controller, paramName, strip: true);
+                warnings.Add($"Stripped {refCount} reference(s) to parameter '{paramName}'");
+            }
+
             controller.RemoveParameter(paramIndex);
 
             EditorUtility.SetDirty(controller);
@@ -732,7 +868,9 @@ namespace MCPForUnity.Editor.Tools.Animation
                 data = new
                 {
                     parameterName = paramName,
-                    totalParameters = controller.parameters.Length
+                    totalParameters = controller.parameters.Length,
+                    strippedReferences = refCount,
+                    warnings = warnings.ToArray()
                 }
             };
         }
@@ -757,6 +895,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 return new { success = false, message = $"State '{stateName}' not found in layer {layerIndex}" };
 
             var changed = new List<string>();
+
+            // Rename in place: preserves the AnimatorState sub-asset and its fileID,
+            // so transitions and external refs (Timeline, animation events) survive.
+            string newName = @params["newName"]?.ToString();
+            if (!string.IsNullOrEmpty(newName))
+            {
+                targetState.name = newName;
+                changed.Add("name");
+            }
 
             if (@params["tag"] != null)
             {
@@ -818,7 +965,7 @@ namespace MCPForUnity.Editor.Tools.Animation
             }
 
             if (changed.Count == 0)
-                return new { success = false, message = "No recognized state properties provided. Supported: tag, speed, writeDefaultValues, iKOnFeet, mirror, cycleOffset, speedParameter, cycleOffsetParameter, mirrorParameter, timeParameter" };
+                return new { success = false, message = "No recognized state properties provided. Supported: newName, tag, speed, writeDefaultValues, iKOnFeet, mirror, cycleOffset, speedParameter, cycleOffsetParameter, mirrorParameter, timeParameter" };
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
@@ -961,40 +1108,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 changed.Add("canTransitionToSelf");
             }
 
-            // Handle conditions replacement
+            // Handle conditions replacement (validate before clearing so a bad call doesn't wipe existing conditions)
             if (@params["conditions"] is JArray conditionsArray)
             {
-                // Clear existing conditions by setting to empty array
+                var (parsedConditions, condError) = ParseConditions(controller, conditionsArray);
+                if (condError != null) return condError;
+
                 transition.conditions = new AnimatorCondition[0];
-
-                foreach (var condItem in conditionsArray)
-                {
-                    if (condItem is not JObject condObj) continue;
-
-                    string paramName = condObj["parameter"]?.ToString();
-                    if (string.IsNullOrEmpty(paramName)) continue;
-
-                    string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
-                    float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
-
-                    AnimatorConditionMode mode;
-                    switch (modeStr)
-                    {
-                        case "greater": mode = AnimatorConditionMode.Greater; break;
-                        case "less": mode = AnimatorConditionMode.Less; break;
-                        case "equals": mode = AnimatorConditionMode.Equals; break;
-                        case "notequal":
-                        case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
-                        case "if":
-                        case "true": mode = AnimatorConditionMode.If; break;
-                        case "ifnot":
-                        case "if_not":
-                        case "false": mode = AnimatorConditionMode.IfNot; break;
-                        default: mode = AnimatorConditionMode.Greater; break;
-                    }
-
+                foreach (var (mode, threshold, paramName) in parsedConditions)
                     transition.AddCondition(mode, threshold, paramName);
-                }
 
                 changed.Add("conditions");
             }
@@ -1261,42 +1383,32 @@ namespace MCPForUnity.Editor.Tools.Animation
                 if (toStateMachine == null)
                     return new { success = false, message = $"State or sub-state machine '{toStateName}' not found" };
             }
+            else
+            {
+                var maybeSm = FindStateMachine(targetMachine, toStateName);
+                if (maybeSm != null)
+                    return new { success = false, message = $"'{toStateName}' is ambiguous: matches both a state and a sub-state machine. Use a path to disambiguate." };
+            }
+
+            // Validate conditions UP FRONT
+            JToken conditionsToken = @params["conditions"];
+            List<(AnimatorConditionMode mode, float threshold, string paramName)> parsedConditions = null;
+            if (conditionsToken is JArray conditionsArray)
+            {
+                var (parsed, error) = ParseConditions(controller, conditionsArray);
+                if (error != null) return error;
+                parsedConditions = parsed;
+            }
 
             AnimatorTransition transition = toState != null
                 ? targetMachine.AddEntryTransition(toState)
                 : targetMachine.AddEntryTransition(toStateMachine);
 
-            // Add conditions
-            JToken conditionsToken = @params["conditions"];
             int conditionCount = 0;
-            if (conditionsToken is JArray conditionsArray)
+            if (parsedConditions != null)
             {
-                foreach (var condItem in conditionsArray)
+                foreach (var (mode, threshold, paramName) in parsedConditions)
                 {
-                    if (condItem is not JObject condObj) continue;
-
-                    string paramName = condObj["parameter"]?.ToString();
-                    if (string.IsNullOrEmpty(paramName)) continue;
-
-                    string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
-                    float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
-
-                    AnimatorConditionMode mode;
-                    switch (modeStr)
-                    {
-                        case "greater": mode = AnimatorConditionMode.Greater; break;
-                        case "less": mode = AnimatorConditionMode.Less; break;
-                        case "equals": mode = AnimatorConditionMode.Equals; break;
-                        case "notequal":
-                        case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
-                        case "if":
-                        case "true": mode = AnimatorConditionMode.If; break;
-                        case "ifnot":
-                        case "if_not":
-                        case "false": mode = AnimatorConditionMode.IfNot; break;
-                        default: mode = AnimatorConditionMode.Greater; break;
-                    }
-
                     transition.AddCondition(mode, threshold, paramName);
                     conditionCount++;
                 }
@@ -1431,8 +1543,17 @@ namespace MCPForUnity.Editor.Tools.Animation
         /// <summary>
         /// Finds a sub-state machine by name or slash-delimited path,
         /// returning its parent state machine.
+        /// Falls back to dot-as-separator on miss (so 'Combat.Melee' resolves like 'Combat/Melee').
         /// </summary>
         internal static AnimatorStateMachine FindStateMachine(AnimatorStateMachine root, string name, out AnimatorStateMachine parentMachine)
+        {
+            var result = FindStateMachineLiteral(root, name, out parentMachine);
+            if (result == null && CanRetryWithDotPath(name))
+                result = FindStateMachineLiteral(root, name.Replace('.', '/'), out parentMachine);
+            return result;
+        }
+
+        private static AnimatorStateMachine FindStateMachineLiteral(AnimatorStateMachine root, string name, out AnimatorStateMachine parentMachine)
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -1479,7 +1600,7 @@ namespace MCPForUnity.Editor.Tools.Animation
             // Recurse depth-first
             foreach (var csm in root.stateMachines)
             {
-                var result = FindStateMachine(csm.stateMachine, name, out parentMachine);
+                var result = FindStateMachineLiteral(csm.stateMachine, name, out parentMachine);
                 if (result != null)
                     return result;
             }
@@ -1487,6 +1608,11 @@ namespace MCPForUnity.Editor.Tools.Animation
             parentMachine = null;
             return null;
         }
+
+        // Only retry with '.' → '/' if the path contains a dot AND no slash —
+        // otherwise the original was already a slash-form path or had no separator.
+        private static bool CanRetryWithDotPath(string path)
+            => !string.IsNullOrEmpty(path) && path.IndexOf('.') >= 0 && path.IndexOf('/') < 0;
 
         /// <summary>
         /// Finds a state by name in a state machine, supporting:
@@ -1501,8 +1627,17 @@ namespace MCPForUnity.Editor.Tools.Animation
         /// <summary>
         /// Finds a state by name and returns its parent state machine (needed for RemoveState).
         /// Supports path notation and depth-first recursion.
+        /// Falls back to dot-as-separator on miss (so 'Sub.Inner' resolves like 'Sub/Inner').
         /// </summary>
         internal static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName, out AnimatorStateMachine parentMachine)
+        {
+            var result = FindStateLiteral(stateMachine, stateName, out parentMachine);
+            if (result == null && CanRetryWithDotPath(stateName))
+                result = FindStateLiteral(stateMachine, stateName.Replace('.', '/'), out parentMachine);
+            return result;
+        }
+
+        private static AnimatorState FindStateLiteral(AnimatorStateMachine stateMachine, string stateName, out AnimatorStateMachine parentMachine)
         {
             if (string.IsNullOrEmpty(stateName))
             {
@@ -1547,10 +1682,10 @@ namespace MCPForUnity.Editor.Tools.Animation
                 }
             }
 
-            // Recurse depth-first into sub-state machines
+            // Recurse depth-first into sub-state machines (literal — wrapper handles dot-fallback once at the top)
             foreach (var csm in stateMachine.stateMachines)
             {
-                var result = FindState(csm.stateMachine, stateName, out parentMachine);
+                var result = FindStateLiteral(csm.stateMachine, stateName, out parentMachine);
                 if (result != null)
                     return result;
             }
@@ -1641,6 +1776,248 @@ namespace MCPForUnity.Editor.Tools.Animation
             string folderName = Path.GetFileName(folderPath);
             if (!string.IsNullOrEmpty(parent) && !string.IsNullOrEmpty(folderName))
                 AssetDatabase.CreateFolder(parent, folderName);
+        }
+
+        // Parses a transition `conditions` array into a validated list, ready to AddCondition().
+        // Validates: parameter exists, mode is known, mode is compatible with parameter type.
+        // Returns (parsed, null) on success or (null, errorResponse) on failure.
+        internal static (List<(AnimatorConditionMode mode, float threshold, string paramName)> parsed, object error)
+            ParseConditions(AnimatorController controller, JArray conditionsArray)
+        {
+            var paramTypes = new Dictionary<string, AnimatorControllerParameterType>(StringComparer.Ordinal);
+            foreach (var p in controller.parameters) paramTypes[p.name] = p.type;
+
+            var parsed = new List<(AnimatorConditionMode, float, string)>();
+
+            foreach (var condItem in conditionsArray)
+            {
+                if (condItem is not JObject condObj) continue;
+
+                string paramName = condObj["parameter"]?.ToString();
+                if (string.IsNullOrEmpty(paramName)) continue;
+
+                if (!paramTypes.TryGetValue(paramName, out var paramType))
+                    return (null, new { success = false, message = $"Condition references unknown parameter '{paramName}'. Add it via controller_add_parameter first." });
+
+                string modeStr = condObj["mode"]?.ToString()?.ToLowerInvariant() ?? "greater";
+                float threshold = condObj["threshold"]?.ToObject<float>() ?? 0f;
+
+                AnimatorConditionMode mode;
+                switch (modeStr)
+                {
+                    case "greater": mode = AnimatorConditionMode.Greater; break;
+                    case "less": mode = AnimatorConditionMode.Less; break;
+                    case "equals": mode = AnimatorConditionMode.Equals; break;
+                    case "notequal":
+                    case "not_equal": mode = AnimatorConditionMode.NotEqual; break;
+                    case "if":
+                    case "true": mode = AnimatorConditionMode.If; break;
+                    case "ifnot":
+                    case "if_not":
+                    case "false": mode = AnimatorConditionMode.IfNot; break;
+                    default:
+                        return (null, new { success = false, message = $"Unknown condition mode '{modeStr}'. Valid: if, ifNot, equals, notEqual, greater, less" });
+                }
+
+                string typeError = CheckConditionModeForParam(mode, paramType, paramName);
+                if (typeError != null)
+                    return (null, new { success = false, message = typeError });
+
+                parsed.Add((mode, threshold, paramName));
+            }
+
+            return (parsed, null);
+        }
+
+        // Rewrites all references to oldName → newName: transition conditions and
+        // state-level parameter bindings (speed/cycleOffset/mirror/time).
+        private static int RewriteParameterReferences(AnimatorController controller, string oldName, string newName)
+        {
+            int count = 0;
+            foreach (var layer in controller.layers)
+                count += RewriteParameterReferencesInMachine(layer.stateMachine, oldName, newName);
+            return count;
+        }
+
+        private static int RewriteParameterReferencesInMachine(AnimatorStateMachine sm, string oldName, string newName)
+        {
+            int count = 0;
+
+            foreach (var cs in sm.states)
+            {
+                var state = cs.state;
+                if (state.speedParameter == oldName) { state.speedParameter = newName; count++; }
+                if (state.cycleOffsetParameter == oldName) { state.cycleOffsetParameter = newName; count++; }
+                if (state.mirrorParameter == oldName) { state.mirrorParameter = newName; count++; }
+                if (state.timeParameter == oldName) { state.timeParameter = newName; count++; }
+
+                foreach (var t in state.transitions)
+                    count += RewriteConditionRefs(t, oldName, newName);
+            }
+
+            foreach (var t in sm.anyStateTransitions)
+                count += RewriteConditionRefs(t, oldName, newName);
+
+            foreach (var t in sm.entryTransitions)
+                count += RewriteConditionRefs(t, oldName, newName);
+
+            foreach (var sub in sm.stateMachines)
+                count += RewriteParameterReferencesInMachine(sub.stateMachine, oldName, newName);
+
+            return count;
+        }
+
+        private static int RewriteConditionRefs(AnimatorTransitionBase t, string oldName, string newName)
+        {
+            var conditions = t.conditions;
+            int count = 0;
+            bool any = false;
+            for (int i = 0; i < conditions.Length; i++)
+            {
+                if (conditions[i].parameter == oldName)
+                {
+                    var c = conditions[i];
+                    c.parameter = newName;
+                    conditions[i] = c;
+                    count++;
+                    any = true;
+                }
+            }
+            if (any) t.conditions = conditions;
+            return count;
+        }
+
+        // Counts (and optionally strips) references to a parameter across the controller:
+        // transition conditions (state-to-state, AnyState, entry) and state-level
+        // parameter bindings (speed/cycleOffset/mirror/time).
+        private static int CountParameterReferences(AnimatorController controller, string paramName, bool strip)
+        {
+            int count = 0;
+            foreach (var layer in controller.layers)
+                count += CountParameterReferencesInMachine(layer.stateMachine, paramName, strip);
+            return count;
+        }
+
+        private static int CountParameterReferencesInMachine(AnimatorStateMachine sm, string paramName, bool strip)
+        {
+            int count = 0;
+
+            foreach (var cs in sm.states)
+            {
+                var state = cs.state;
+
+                if (state.speedParameterActive && state.speedParameter == paramName)
+                {
+                    count++;
+                    if (strip) { state.speedParameterActive = false; state.speedParameter = ""; }
+                }
+                if (state.cycleOffsetParameterActive && state.cycleOffsetParameter == paramName)
+                {
+                    count++;
+                    if (strip) { state.cycleOffsetParameterActive = false; state.cycleOffsetParameter = ""; }
+                }
+                if (state.mirrorParameterActive && state.mirrorParameter == paramName)
+                {
+                    count++;
+                    if (strip) { state.mirrorParameterActive = false; state.mirrorParameter = ""; }
+                }
+                if (state.timeParameterActive && state.timeParameter == paramName)
+                {
+                    count++;
+                    if (strip) { state.timeParameterActive = false; state.timeParameter = ""; }
+                }
+
+                foreach (var t in state.transitions)
+                    count += CountAndMaybeStripConditions(t, paramName, strip);
+            }
+
+            foreach (var t in sm.anyStateTransitions)
+                count += CountAndMaybeStripConditions(t, paramName, strip);
+
+            foreach (var t in sm.entryTransitions)
+                count += CountAndMaybeStripConditions(t, paramName, strip);
+
+            foreach (var sub in sm.stateMachines)
+                count += CountParameterReferencesInMachine(sub.stateMachine, paramName, strip);
+
+            return count;
+        }
+
+        private static int CountAndMaybeStripConditions(AnimatorTransitionBase t, string paramName, bool strip)
+        {
+            int count = 0;
+            foreach (var c in t.conditions)
+                if (c.parameter == paramName) count++;
+            if (count > 0 && strip)
+            {
+                var keepers = new List<AnimatorCondition>();
+                foreach (var c in t.conditions)
+                    if (c.parameter != paramName) keepers.Add(c);
+                t.conditions = keepers.ToArray();
+            }
+            return count;
+        }
+
+        // Walks every state machine in every layer and removes transitions whose
+        // destinationState == removedState. Unity's RemoveState only drops the state
+        // itself; inbound transitions are left dangling otherwise.
+        private static int CleanTransitionsToState(AnimatorController controller, AnimatorState removedState)
+        {
+            int removed = 0;
+            foreach (var layer in controller.layers)
+                removed += CleanTransitionsToStateInMachine(layer.stateMachine, removedState);
+            return removed;
+        }
+
+        private static int CleanTransitionsToStateInMachine(AnimatorStateMachine sm, AnimatorState removedState)
+        {
+            int removed = 0;
+
+            foreach (var cs in sm.states)
+            {
+                var toRemove = new List<AnimatorStateTransition>();
+                foreach (var t in cs.state.transitions)
+                    if (t.destinationState == removedState) toRemove.Add(t);
+                foreach (var t in toRemove) { cs.state.RemoveTransition(t); removed++; }
+            }
+
+            var anyToRemove = new List<AnimatorStateTransition>();
+            foreach (var t in sm.anyStateTransitions)
+                if (t.destinationState == removedState) anyToRemove.Add(t);
+            foreach (var t in anyToRemove) { sm.RemoveAnyStateTransition(t); removed++; }
+
+            var entryToRemove = new List<AnimatorTransition>();
+            foreach (var t in sm.entryTransitions)
+                if (t.destinationState == removedState) entryToRemove.Add(t);
+            foreach (var t in entryToRemove) { sm.RemoveEntryTransition(t); removed++; }
+
+            foreach (var sub in sm.stateMachines)
+                removed += CleanTransitionsToStateInMachine(sub.stateMachine, removedState);
+
+            return removed;
+        }
+
+        private static string CheckConditionModeForParam(AnimatorConditionMode mode, AnimatorControllerParameterType paramType, string paramName)
+        {
+            switch (mode)
+            {
+                case AnimatorConditionMode.If:
+                case AnimatorConditionMode.IfNot:
+                    if (paramType != AnimatorControllerParameterType.Bool && paramType != AnimatorControllerParameterType.Trigger)
+                        return $"Condition mode '{mode}' requires a Bool or Trigger parameter; '{paramName}' is {paramType}.";
+                    break;
+                case AnimatorConditionMode.Greater:
+                case AnimatorConditionMode.Less:
+                    if (paramType != AnimatorControllerParameterType.Float && paramType != AnimatorControllerParameterType.Int)
+                        return $"Condition mode '{mode}' requires a Float or Int parameter; '{paramName}' is {paramType}.";
+                    break;
+                case AnimatorConditionMode.Equals:
+                case AnimatorConditionMode.NotEqual:
+                    if (paramType != AnimatorControllerParameterType.Int)
+                        return $"Condition mode '{mode}' requires an Int parameter; '{paramName}' is {paramType}.";
+                    break;
+            }
+            return null;
         }
     }
 }

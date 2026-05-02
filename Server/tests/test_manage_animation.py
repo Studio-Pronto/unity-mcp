@@ -74,14 +74,16 @@ class TestActionLists:
 
     def test_expected_controller_actions_present(self):
         expected = {"controller_create", "controller_add_state", "controller_add_transition",
-                    "controller_add_parameter", "controller_get_info", "controller_assign",
+                    "controller_add_parameter", "controller_modify_parameter",
+                    "controller_get_info", "controller_assign",
                     "controller_set_state_motion", "controller_remove_state",
                     "controller_remove_transition", "controller_remove_parameter",
                     "controller_modify_state", "controller_modify_transition",
                     "controller_add_sub_state_machine", "controller_remove_sub_state_machine",
                     "controller_modify_sub_state_machine",
                     "controller_add_entry_transition", "controller_remove_entry_transition",
-                    "controller_add_layer", "controller_remove_layer", "controller_set_layer_weight",
+                    "controller_add_layer", "controller_remove_layer",
+                    "controller_rename_layer", "controller_set_layer_weight",
                     "controller_create_blend_tree_1d", "controller_create_blend_tree_2d",
                     "controller_add_blend_tree_child", "controller_add_blend_tree_child_tree"}
         assert expected.issubset(set(CONTROLLER_ACTIONS))
@@ -152,6 +154,61 @@ class TestManageAnimationToolValidation:
         assert "animator_" in result["message"]
         assert "controller_" in result["message"]
         assert "clip_" in result["message"]
+
+
+# =============================================================================
+# Tool Description Schema (so LLMs can discover per-action keys)
+# =============================================================================
+
+class TestToolDescriptionSchema:
+    """The tool description is the LLM's primary discovery surface for action-specific
+    properties. This pins critical schema strings so future edits don't silently drop them."""
+
+    @pytest.fixture
+    def description(self) -> str:
+        from services.tools.manage_animation import manage_animation
+        # FastMCP attaches the description to the registered tool.
+        desc = getattr(manage_animation, "description", None)
+        if desc is None:
+            # Fall back to underlying function metadata
+            desc = getattr(manage_animation, "__doc__", "") or ""
+            desc += getattr(getattr(manage_animation, "fn", None), "__doc__", "") or ""
+            # Pull from the FastMCP tool object if present
+            tool_obj = getattr(manage_animation, "_mcp_tool", None) or getattr(manage_animation, "tool", None)
+            if tool_obj is not None:
+                desc += getattr(tool_obj, "description", "") or ""
+        # Last resort: grep the source file
+        if not desc or "STATE PROPERTIES" not in desc:
+            from pathlib import Path
+            src = Path(__file__).resolve().parents[1] / "src" / "services" / "tools" / "manage_animation.py"
+            desc = src.read_text()
+        return desc
+
+    def test_state_properties_documented(self, description):
+        for key in ("STATE PROPERTIES", "stateName", "writeDefaultValues", "iKOnFeet", "speedParameter", "newName"):
+            assert key in description, f"description missing '{key}'"
+
+    def test_transition_properties_documented(self, description):
+        for key in ("TRANSITION PROPERTIES", "fromState", "toState", "canTransitionToSelf",
+                    "interruptionSource", "conditions"):
+            assert key in description, f"description missing '{key}'"
+
+    def test_parameter_properties_documented(self, description):
+        for key in ("PARAMETER PROPERTIES", "parameterType", "defaultValue", "force"):
+            assert key in description, f"description missing '{key}'"
+
+    def test_layer_properties_documented(self, description):
+        for key in ("LAYER PROPERTIES", "blendingMode", "additive"):
+            assert key in description, f"description missing '{key}'"
+
+    def test_conventions_documented(self, description):
+        for key in ("CONVENTIONS", "AnyState", "Identity preservation", "modify_state"):
+            assert key in description, f"description missing '{key}'"
+
+    def test_condition_modes_by_type_documented(self, description):
+        # Each parameter type's valid modes must be discoverable
+        for substring in ("Bool/Trigger", "if", "ifNot", "equals", "notEqual", "greater", "less"):
+            assert substring in description, f"description missing '{substring}'"
 
 
 # =============================================================================

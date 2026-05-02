@@ -245,6 +245,7 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "assign": return ControllerCreate.AssignToGameObject(@params);
                 case "add_layer": return ControllerLayers.AddLayer(@params);
                 case "remove_layer": return ControllerLayers.RemoveLayer(@params);
+                case "rename_layer": return ControllerLayers.RenameLayer(@params);
                 case "set_layer_weight": return ControllerLayers.SetLayerWeight(@params);
                 case "create_blend_tree_1d": return ControllerBlendTrees.CreateBlendTree1D(@params);
                 case "create_blend_tree_2d": return ControllerBlendTrees.CreateBlendTree2D(@params);
@@ -254,6 +255,7 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "remove_state": return ControllerCreate.RemoveState(@params);
                 case "remove_transition": return ControllerCreate.RemoveTransition(@params);
                 case "remove_parameter": return ControllerCreate.RemoveParameter(@params);
+                case "modify_parameter": return ControllerCreate.ModifyParameter(@params);
                 case "modify_state": return ControllerCreate.ModifyState(@params);
                 case "modify_transition": return ControllerCreate.ModifyTransition(@params);
                 case "add_sub_state_machine": return ControllerCreate.AddSubStateMachine(@params);
@@ -262,7 +264,7 @@ namespace MCPForUnity.Editor.Tools.Animation
                 case "add_entry_transition": return ControllerCreate.AddEntryTransition(@params);
                 case "remove_entry_transition": return ControllerCreate.RemoveEntryTransition(@params);
                 default:
-                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree, add_sub_state_machine, remove_sub_state_machine, modify_sub_state_machine, add_entry_transition, remove_entry_transition" };
+                    return new { success = false, message = $"Unknown controller action: {action}. Valid: create, add_state, add_transition, add_parameter, modify_parameter, get_info, assign, set_state_motion, remove_state, remove_transition, remove_parameter, modify_state, modify_transition, add_layer, remove_layer, rename_layer, set_layer_weight, create_blend_tree_1d, create_blend_tree_2d, add_blend_tree_child, add_blend_tree_child_tree, add_sub_state_machine, remove_sub_state_machine, modify_sub_state_machine, add_entry_transition, remove_entry_transition" };
             }
         }
 
