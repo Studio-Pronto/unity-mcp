@@ -7,6 +7,7 @@ using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using MCPForUnity.Runtime.Helpers;
 
 namespace MCPForUnity.Editor.Tools
 {
@@ -119,9 +120,9 @@ namespace MCPForUnity.Editor.Tools
                 message = $"Component '{componentTypeName}' added to '{targetGo.name}'.",
                 data = new
                 {
-                    instanceID = targetGo.GetInstanceID(),
+                    instanceID = targetGo.GetInstanceIDCompat(),
                     componentType = type.FullName,
-                    componentInstanceID = newComponent.GetInstanceID()
+                    componentInstanceID = newComponent.GetInstanceIDCompat()
                 }
             };
         }
@@ -162,7 +163,7 @@ namespace MCPForUnity.Editor.Tools
                 {
                     success = true,
                     message = $"Component '{componentTypeName}' (index {componentIndex.Value}) removed from '{targetGo.name}'.",
-                    data = new { instanceID = targetGo.GetInstanceID(), componentIndex = componentIndex.Value }
+                    data = new { instanceID = targetGo.GetInstanceIDCompat(), componentIndex = componentIndex.Value }
                 };
             }
 
@@ -183,7 +184,7 @@ namespace MCPForUnity.Editor.Tools
                 message = $"Component '{componentTypeName}' removed from '{targetGo.name}'.",
                 data = new
                 {
-                    instanceID = targetGo.GetInstanceID()
+                    instanceID = targetGo.GetInstanceIDCompat()
                 }
             };
         }
@@ -280,7 +281,7 @@ namespace MCPForUnity.Editor.Tools
                         message = $"Some properties failed to set on '{componentType}'.",
                         data = new
                         {
-                            instanceID = targetGo.GetInstanceID(),
+                            instanceID = targetGo.GetInstanceIDCompat(),
                             errors = errors
                         }
                     };
@@ -292,7 +293,7 @@ namespace MCPForUnity.Editor.Tools
                     message = $"Properties set on component '{componentType}' on '{targetGo.name}'.",
                     data = new
                     {
-                        instanceID = targetGo.GetInstanceID()
+                        instanceID = targetGo.GetInstanceIDCompat()
                     }
                 };
             }

@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using MCPForUnity.Runtime.Helpers;
 
 namespace MCPForUnity.Editor.Tools.Prefabs
 {
@@ -168,7 +169,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                     new
                     {
                         prefabPath = finalPath,
-                        instanceId = result.GetInstanceID(),
+                        instanceId = result.GetInstanceIDCompat(),
                         instanceName = result.name,
                         wasUnlinked = unlinkIfInstance && objectValidation.shouldUnlink,
                         wasReplaced = replaceExisting && fileExistedAtPath,
@@ -1240,7 +1241,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
 
             string name = transform.gameObject.name;
             string path = string.IsNullOrEmpty(parentPath) ? name : $"{parentPath}/{name}";
-            int instanceId = transform.gameObject.GetInstanceID();
+            int instanceId = transform.gameObject.GetInstanceIDCompat();
             bool activeSelf = transform.gameObject.activeSelf;
             int childCount = transform.childCount;
             var componentTypes = PrefabUtilityHelper.GetComponentTypeNames(transform.gameObject);
@@ -1789,15 +1790,12 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                     return new ErrorResponse("Not currently in prefab editing mode. Open a prefab stage first with open_prefab_stage.");
                 }
 
-                string prefabPath = prefabStage.assetPath;
-                EditorSceneManager.MarkSceneDirty(prefabStage.scene);
-                bool saved = EditorSceneManager.SaveScene(prefabStage.scene);
-                if (!saved)
+                if (!TrySavePrefabStage(prefabStage, out string prefabPath, out string errorMessage))
                 {
-                    return new ErrorResponse($"Failed to save prefab stage for '{prefabPath}'. The file may be read-only or the disk may be full.");
+                    return new ErrorResponse(errorMessage);
                 }
 
-                return new SuccessResponse($"Saved prefab stage changes for '{prefabPath}'.", new { prefabPath, saved });
+                return new SuccessResponse($"Saved prefab stage changes for '{prefabPath}'.", new { prefabPath, saved = true });
             }
             catch (Exception e)
             {
@@ -1817,10 +1815,9 @@ namespace MCPForUnity.Editor.Tools.Prefabs
 
                 if (saveBeforeClose)
                 {
-                    var saveResult = SavePrefabStage();
-                    if (saveResult is ErrorResponse)
+                    if (!TrySavePrefabStage(prefabStage, out _, out string errorMessage))
                     {
-                        return saveResult;
+                        return new ErrorResponse(errorMessage);
                     }
                 }
 
@@ -1832,6 +1829,31 @@ namespace MCPForUnity.Editor.Tools.Prefabs
             {
                 return new ErrorResponse($"Error closing prefab stage: {e.Message}");
             }
+        }
+
+        private static bool TrySavePrefabStage(PrefabStage prefabStage, out string prefabPath, out string errorMessage)
+        {
+            prefabPath = prefabStage.assetPath;
+            errorMessage = null;
+
+            if (prefabStage.prefabContentsRoot == null)
+            {
+                errorMessage = $"Failed to save prefab stage for '{prefabPath}'. The prefab contents root is missing.";
+                return false;
+            }
+
+            bool saved;
+            PrefabUtility.SaveAsPrefabAsset(prefabStage.prefabContentsRoot, prefabPath, out saved);
+            if (!saved)
+            {
+                errorMessage = $"Failed to save prefab stage for '{prefabPath}'. The file may be read-only or the disk may be full.";
+                return false;
+            }
+
+            prefabStage.ClearDirtiness();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return true;
         }
 
         #endregion
