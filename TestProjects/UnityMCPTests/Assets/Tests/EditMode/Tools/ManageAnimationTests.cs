@@ -1546,6 +1546,242 @@ namespace MCPForUnityTests.Editor.Tools
         }
 
         // =============================================================================
+        // Controller: Exit Pseudo-State Transitions
+        // =============================================================================
+
+        [Test]
+        public void ControllerAddTransition_ToExit_CreatesExitTransition()
+        {
+            string controllerPath = $"{TempRoot}/AddExit_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            sm.AddState("Idle");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit",
+                ["hasExitTime"] = false,
+                ["duration"] = 0.1f
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idle = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(1, idle.transitions.Length);
+            Assert.IsTrue(idle.transitions[0].isExit);
+            Assert.IsNull(idle.transitions[0].destinationState);
+            Assert.IsNull(idle.transitions[0].destinationStateMachine);
+            Assert.IsFalse(idle.transitions[0].hasExitTime);
+            Assert.AreEqual(0.1f, idle.transitions[0].duration, 0.001f);
+        }
+
+        [Test]
+        public void ControllerAddTransition_ToExit_FromSubStateMachine_CreatesExitTransition()
+        {
+            string controllerPath = $"{TempRoot}/AddExitSub_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var root = controller.layers[0].stateMachine;
+            var jump = root.AddStateMachine("Jump");
+            jump.AddState("Jump_Idle");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Jump/Jump_Idle",
+                ["toState"] = "Exit",
+                ["hasExitTime"] = false
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var jumpSm = controller.layers[0].stateMachine.stateMachines[0].stateMachine;
+            var jumpIdle = jumpSm.states.First(s => s.state.name == "Jump_Idle").state;
+            Assert.AreEqual(1, jumpIdle.transitions.Length);
+            Assert.IsTrue(jumpIdle.transitions[0].isExit);
+            Assert.IsNull(jumpIdle.transitions[0].destinationState);
+            Assert.IsNull(jumpIdle.transitions[0].destinationStateMachine);
+        }
+
+        [Test]
+        public void ControllerAddTransition_ToExit_AnyState_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/AddExitAny_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.layers[0].stateMachine.AddState("Idle");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_add_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "AnyState",
+                ["toState"] = "Exit"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("AnyState"));
+            Assert.That(result["message"].ToString(), Does.Contain("Exit"));
+        }
+
+        [Test]
+        public void ControllerAddTransition_ToExit_TokenVariants_AllAccepted()
+        {
+            foreach (var token in new[] { "Exit", "_Exit", "<Exit>" })
+            {
+                string controllerPath = $"{TempRoot}/AddExitToken_{Guid.NewGuid():N}.controller";
+                var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+                controller.layers[0].stateMachine.AddState("Idle");
+                AssetDatabase.SaveAssets();
+
+                var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+                {
+                    ["action"] = "controller_add_transition",
+                    ["controllerPath"] = controllerPath,
+                    ["fromState"] = "Idle",
+                    ["toState"] = token
+                }));
+                Assert.IsTrue(result.Value<bool>("success"), $"Token '{token}' failed: {result}");
+
+                controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                var idle = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+                Assert.AreEqual(1, idle.transitions.Length, $"Token '{token}' did not produce one transition");
+                Assert.IsTrue(idle.transitions[0].isExit, $"Token '{token}' did not produce an exit transition");
+            }
+        }
+
+        [Test]
+        public void ControllerModifyTransition_ToExit_ModifiesProperties()
+        {
+            string controllerPath = $"{TempRoot}/ModifyExit_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            idle.AddExitTransition();
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_modify_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit",
+                ["duration"] = 0.1f,
+                ["hasExitTime"] = false
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(1, idleState.transitions.Length, "Should not create a new transition");
+            Assert.IsTrue(idleState.transitions[0].isExit);
+            Assert.AreEqual(0.1f, idleState.transitions[0].duration, 0.001f);
+            Assert.IsFalse(idleState.transitions[0].hasExitTime);
+        }
+
+        [Test]
+        public void ControllerModifyTransition_ToExit_WithMultipleExitTransitions_UsesIndex()
+        {
+            string controllerPath = $"{TempRoot}/ModifyExitIdx_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            idle.AddExitTransition();
+            idle.AddExitTransition();
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_modify_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit",
+                ["transitionIndex"] = 1,
+                ["duration"] = 0.5f
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(2, idleState.transitions.Length);
+            Assert.AreEqual(0.5f, idleState.transitions[1].duration, 0.001f);
+            Assert.AreNotEqual(0.5f, idleState.transitions[0].duration, 0.001f);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_ToExit_Removes()
+        {
+            string controllerPath = $"{TempRoot}/RemoveExit_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            idle.AddExitTransition();
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(0, idleState.transitions.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_ToExit_AllMatching_WithoutIndex()
+        {
+            string controllerPath = $"{TempRoot}/RemoveExitAll_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            var sm = controller.layers[0].stateMachine;
+            var idle = sm.AddState("Idle");
+            idle.AddExitTransition();
+            idle.AddExitTransition();
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit"
+            }));
+            Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+            Assert.AreEqual(2, result["data"]["removedCount"].Value<int>());
+
+            controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+            var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
+            Assert.AreEqual(0, idleState.transitions.Length);
+        }
+
+        [Test]
+        public void ControllerRemoveTransition_ToExit_NotFound_ReturnsError()
+        {
+            string controllerPath = $"{TempRoot}/RemoveExitNotFound_{Guid.NewGuid():N}.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
+            controller.layers[0].stateMachine.AddState("Idle");
+            AssetDatabase.SaveAssets();
+
+            var result = ToJObject(ManageAnimation.HandleCommand(new JObject
+            {
+                ["action"] = "controller_remove_transition",
+                ["controllerPath"] = controllerPath,
+                ["fromState"] = "Idle",
+                ["toState"] = "Exit"
+            }));
+            Assert.IsFalse(result.Value<bool>("success"));
+            Assert.That(result["message"].ToString(), Does.Contain("No transition"));
+        }
+
+        // =============================================================================
         // Controller: GetInfo Extended Properties
         // =============================================================================
 

@@ -509,6 +509,17 @@ class TestControllerCLICommands:
                 assert params["properties"]["orderedInterruption"] is False
                 assert params["properties"]["canTransitionToSelf"] is False
 
+    def test_controller_add_transition_to_exit_passes_through(self, runner, mock_config, mock_success):
+        with patch("cli.commands.animation.get_config", return_value=mock_config):
+            with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:
+                runner.invoke(animation, [
+                    "controller", "add-transition", "Assets/Anim/Player.controller",
+                    "Idle", "Exit",
+                ])
+
+                params = _get_params(mock_run)
+                assert params["properties"]["toState"] == "Exit"
+
     def test_controller_add_parameter_builds_correct_params(self, runner, mock_config, mock_success):
         with patch("cli.commands.animation.get_config", return_value=mock_config):
             with patch("cli.commands.animation.run_command", return_value=mock_success) as mock_run:

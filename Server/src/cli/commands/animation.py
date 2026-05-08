@@ -775,6 +775,8 @@ def controller_add_transition(controller_path: str, from_state: str, to_state: s
         unity-mcp animation controller add-transition "Assets/Anim/Player.controller" "Idle" "Walk" \\
             --no-exit-time --duration 0.25 \\
             --conditions '[{"parameter":"Speed","mode":"greater","threshold":0.1}]'
+        unity-mcp animation controller add-transition "Assets/Anim/Player.controller" \\
+            "Jump/Jump_Idle" "Exit" --no-exit-time --duration 0.05
     """
     config = get_config()
     params: dict[str, Any] = {

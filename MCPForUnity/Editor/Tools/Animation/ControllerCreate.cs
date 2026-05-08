@@ -158,21 +158,30 @@ namespace MCPForUnity.Editor.Tools.Animation
                            || string.Equals(fromStateName, "Any", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
 
-            var toState = FindState(rootStateMachine, toStateName);
+            bool toExit = IsExitToken(toStateName);
+
+            if (isAnyState && toExit)
+                return new { success = false, message = "AnyState transitions to Exit are not supported by Unity. Add the exit transition to a specific source state instead." };
+
+            AnimatorState toState = null;
             AnimatorStateMachine toStateMachine = null;
-            if (toState == null)
+            if (!toExit)
             {
-                // Fallback: check if toState is a sub-state machine name
-                toStateMachine = FindStateMachine(rootStateMachine, toStateName);
-                if (toStateMachine == null)
-                    return new { success = false, message = $"State or sub-state machine '{toStateName}' not found in layer {layerIndex}" };
-            }
-            else
-            {
-                // Ambiguity: same name resolves as BOTH a state and a sub-state machine.
-                var maybeSm = FindStateMachine(rootStateMachine, toStateName);
-                if (maybeSm != null)
-                    return new { success = false, message = $"'{toStateName}' is ambiguous in layer {layerIndex}: matches both a state and a sub-state machine. Use a path like 'Parent/{toStateName}' to disambiguate." };
+                toState = FindState(rootStateMachine, toStateName);
+                if (toState == null)
+                {
+                    // Fallback: check if toState is a sub-state machine name
+                    toStateMachine = FindStateMachine(rootStateMachine, toStateName);
+                    if (toStateMachine == null)
+                        return new { success = false, message = $"State or sub-state machine '{toStateName}' not found in layer {layerIndex}" };
+                }
+                else
+                {
+                    // Ambiguity: same name resolves as BOTH a state and a sub-state machine.
+                    var maybeSm = FindStateMachine(rootStateMachine, toStateName);
+                    if (maybeSm != null)
+                        return new { success = false, message = $"'{toStateName}' is ambiguous in layer {layerIndex}: matches both a state and a sub-state machine. Use a path like 'Parent/{toStateName}' to disambiguate." };
+                }
             }
 
             // Validate conditions UP FRONT so we never create a transition that can't be fully populated.
@@ -199,9 +208,12 @@ namespace MCPForUnity.Editor.Tools.Animation
                 if (fromState == null)
                     return new { success = false, message = $"State '{fromStateName}' not found in layer {layerIndex}" };
 
-                transition = toState != null
-                    ? fromState.AddTransition(toState)
-                    : fromState.AddTransition(toStateMachine);
+                if (toExit)
+                    transition = fromState.AddExitTransition();
+                else
+                    transition = toState != null
+                        ? fromState.AddTransition(toState)
+                        : fromState.AddTransition(toStateMachine);
             }
 
             bool hasExitTime = @params["hasExitTime"]?.ToObject<bool>() ?? true;
@@ -635,6 +647,12 @@ namespace MCPForUnity.Editor.Tools.Animation
                            || string.Equals(fromStateName, "Any", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
 
+            bool toExit = IsExitToken(toStateName);
+
+            // Defensive: Unity has no API to create an AnyState→Exit transition.
+            if (isAnyState && toExit)
+                return new { success = false, message = "AnyState transitions to Exit are not supported by Unity." };
+
             int removedCount = 0;
 
             // For path-based toState like "Combat/Attack", match the leaf name against destinationState
@@ -645,9 +663,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in rootStateMachine.anyStateTransitions)
                 {
-                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
-                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    if (toExit)
+                    {
+                        if (t.isExit) matching.Add(t);
+                    }
+                    else if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                             (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    {
                         matching.Add(t);
+                    }
                 }
 
                 if (matching.Count == 0)
@@ -679,9 +703,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in fromState.transitions)
                 {
-                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
-                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    if (toExit)
+                    {
+                        if (t.isExit) matching.Add(t);
+                    }
+                    else if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                             (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    {
                         matching.Add(t);
+                    }
                 }
 
                 if (matching.Count == 0)
@@ -1006,6 +1036,13 @@ namespace MCPForUnity.Editor.Tools.Animation
                            || string.Equals(fromStateName, "Any", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(fromStateName, "Any State", StringComparison.OrdinalIgnoreCase);
 
+            bool toExit = IsExitToken(toStateName);
+
+            // Defensive: Unity has no API to create an AnyState→Exit transition, so the match
+            // below would simply fail. Emit a targeted message rather than the generic one.
+            if (isAnyState && toExit)
+                return new { success = false, message = "AnyState transitions to Exit are not supported by Unity." };
+
             // For path-based toState like "Combat/Attack", match the leaf name
             string toLeafName = toStateName.Contains("/") ? toStateName.Substring(toStateName.LastIndexOf('/') + 1) : toStateName;
 
@@ -1016,9 +1053,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in rootStateMachine.anyStateTransitions)
                 {
-                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
-                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    if (toExit)
+                    {
+                        if (t.isExit) matching.Add(t);
+                    }
+                    else if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                             (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    {
                         matching.Add(t);
+                    }
                 }
 
                 if (matching.Count == 0)
@@ -1039,9 +1082,15 @@ namespace MCPForUnity.Editor.Tools.Animation
                 var matching = new List<AnimatorStateTransition>();
                 foreach (var t in fromState.transitions)
                 {
-                    if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
-                        (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    if (toExit)
+                    {
+                        if (t.isExit) matching.Add(t);
+                    }
+                    else if ((t.destinationState != null && t.destinationState.name == toLeafName) ||
+                             (t.destinationStateMachine != null && t.destinationStateMachine.name == toLeafName))
+                    {
                         matching.Add(t);
+                    }
                 }
 
                 if (matching.Count == 0)
@@ -1613,6 +1662,13 @@ namespace MCPForUnity.Editor.Tools.Animation
         // otherwise the original was already a slash-form path or had no separator.
         private static bool CanRetryWithDotPath(string path)
             => !string.IsNullOrEmpty(path) && path.IndexOf('.') >= 0 && path.IndexOf('/') < 0;
+
+        // Sentinel tokens for the Exit pseudo-state. Mirrors how AnyState is addressed
+        // via "AnyState" / "Any" / "Any State" elsewhere in this file.
+        private static bool IsExitToken(string s)
+            => string.Equals(s, "Exit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "_Exit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "<Exit>", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Finds a state by name in a state machine, supporting:
