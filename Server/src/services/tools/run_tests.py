@@ -170,6 +170,7 @@ async def run_tests(
 ) -> RunTestsStartResponse | MCPResponse:
     unity_instance = await get_unity_instance_from_context(ctx)
 
+    # Test runs need a fresh compile to pick up source edits made before the run.
     gate = await preflight(ctx, requires_no_tests=True, wait_for_no_compile=True, refresh_if_dirty=True)
     if isinstance(gate, MCPResponse):
         return gate

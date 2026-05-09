@@ -11,6 +11,9 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 from services.tools.preflight import preflight
 
 
+_READ_ACTIONS = {"get_info", "get_hierarchy", "get_overrides"}
+
+
 # Required parameters for each action
 REQUIRED_PARAMS = {
     "get_info": ["prefab_path"],
@@ -114,7 +117,8 @@ async def manage_prefabs(
 
     # Preflight check for operations to ensure Unity is ready
     try:
-        gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+        is_write = action not in _READ_ACTIONS
+        gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=is_write)
         if gate is not None:
             return gate.model_dump()
     except Exception as exc:

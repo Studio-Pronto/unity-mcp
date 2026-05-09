@@ -16,6 +16,9 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 from services.tools.preflight import preflight
 
 
+_READ_ACTIONS = {"search", "get_info", "get_components"}
+
+
 @mcp_for_unity_tool(
     description=(
         "Performs asset operations (import, create, modify, delete, etc.) in Unity.\n\n"
@@ -57,9 +60,13 @@ async def manage_asset(
 ) -> dict[str, Any]:
     unity_instance = await get_unity_instance_from_context(ctx)
 
+    action_l = (action or "").lower()
+
     # Best-effort guard: if Unity is compiling/reloading or known external changes are pending,
-    # wait/refresh to avoid stale reads and flaky timeouts.
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    # wait/refresh to avoid stale reads and flaky timeouts. Read-only actions skip the refresh
+    # so they never trigger a Unity recompile.
+    is_write = action_l not in _READ_ACTIONS
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=is_write)
     if gate is not None:
         return gate.model_dump()
 
@@ -76,7 +83,6 @@ async def manage_asset(
     # Unity's C# handler treats `path` as a folder scope. If a model mistakenly puts a query like
     # "t:MonoScript" into `path`, Unity will consider it an invalid folder and fall back to searching
     # the entire project, which is token-heavy. Normalize such cases into search_pattern + Assets scope.
-    action_l = (action or "").lower()
     if action_l == "search":
         try:
             raw_path = (path or "").strip()

@@ -11,6 +11,15 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 from services.tools.preflight import preflight
 
 
+_READ_ACTIONS = {
+    "get_hierarchy",
+    "get_active",
+    "get_build_settings",
+    "scene_view_frame",
+    "get_loaded_scenes",
+}
+
+
 @mcp_for_unity_tool(
     description=(
         "Performs CRUD operations on Unity scenes. "
@@ -82,7 +91,11 @@ async def manage_scene(
                            "For validate: true to auto-fix missing scripts (undoable)."] | None = None,
 ) -> dict[str, Any]:
     unity_instance = await get_unity_instance_from_context(ctx)
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    if action == "validate":
+        is_write = coerce_bool(auto_repair, default=False)
+    else:
+        is_write = action not in _READ_ACTIONS
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=is_write)
     if gate is not None:
         return gate.model_dump()
     try:

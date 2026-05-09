@@ -16,6 +16,17 @@ from transport.legacy.unity_connection import async_send_command_with_retry
 from services.tools.preflight import preflight
 
 
+_WRITE_ACTIONS = {
+    "create",
+    "modify",
+    "create_sprite",
+    "apply_pattern",
+    "apply_gradient",
+    "apply_noise",
+    "set_import_settings",
+}
+
+
 def _normalize_dimension(value: Any, name: str, default: int = 64) -> tuple[int | None, str | None]:
     if value is None:
         return default, None
@@ -464,7 +475,7 @@ async def manage_texture(
     unity_instance = await get_unity_instance_from_context(ctx)
 
     # Preflight check
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=action in _WRITE_ACTIONS)
     if gate is not None:
         return gate.model_dump()
 

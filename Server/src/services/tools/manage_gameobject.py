@@ -11,6 +11,9 @@ from services.tools.utils import coerce_bool, parse_json_payload, normalize_vect
 from services.tools.preflight import preflight
 
 
+_WRITE_ACTIONS = {"create", "modify", "delete", "duplicate", "move_relative", "look_at"}
+
+
 def _normalize_component_properties(value: Any) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
     """
     Robustly normalize component_properties to a dict.
@@ -122,7 +125,7 @@ async def manage_gameobject(
     # Removed session_state import
     unity_instance = await get_unity_instance_from_context(ctx)
 
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=action in _WRITE_ACTIONS)
     if gate is not None:
         return gate.model_dump()
 

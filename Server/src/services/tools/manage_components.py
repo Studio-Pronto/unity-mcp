@@ -13,6 +13,9 @@ from services.tools.utils import parse_json_payload, normalize_properties
 from services.tools.preflight import preflight
 
 
+_WRITE_ACTIONS = {"add", "remove", "set_property"}
+
+
 @mcp_for_unity_tool(
     description=(
         "Add, remove, or set properties on components attached to GameObjects. "
@@ -82,7 +85,7 @@ async def manage_components(
     """
     unity_instance = await get_unity_instance_from_context(ctx)
 
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=action in _WRITE_ACTIONS)
     if gate is not None:
         return gate.model_dump()
 
