@@ -325,8 +325,13 @@ def execute_menu(menu_path: str):
     is_flag=True,
     help="Include details for failed/skipped tests only."
 )
+@click.option(
+    "--clear-stuck",
+    is_flag=True,
+    help="Force-clear an orphaned/stuck test job and return without starting a new run."
+)
 @handle_unity_errors
-def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, failed_only: bool):
+def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, failed_only: bool, clear_stuck: bool):
     """Run Unity tests.
 
     \b
@@ -335,10 +340,13 @@ def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, f
         unity-mcp editor tests --mode PlayMode
         unity-mcp editor tests --async
         unity-mcp editor tests --wait 60 --failed-only
+        unity-mcp editor tests --clear-stuck
     """
     config = get_config()
 
     params: dict[str, Any] = {"mode": mode}
+    if clear_stuck:
+        params["clear_stuck"] = True
     if wait is not None:
         params["wait_timeout"] = wait
     if details:

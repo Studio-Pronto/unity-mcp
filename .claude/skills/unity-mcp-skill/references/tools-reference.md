@@ -791,6 +791,11 @@ result = run_tests(
     include_details=False        # include all test details
 )
 # Returns: {"job_id": "abc123", ...}
+
+# Recovery: force-clear an orphaned/stuck test job when subsequent run_tests
+# calls keep returning "tests_running" even though no test is actually running.
+run_tests(clear_stuck=True)
+# Returns: {"cleared": true|false} — "Stuck job cleared." or "No running job to clear."
 ```
 
 ### get_test_job

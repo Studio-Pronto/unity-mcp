@@ -95,23 +95,30 @@ namespace MCPForUnity.Editor.Services
             bool cleared = false;
             lock (LockObj)
             {
-                if (string.IsNullOrEmpty(_currentJobId))
+                if (!string.IsNullOrEmpty(_currentJobId))
                 {
-                    return false;
+                    if (Jobs.TryGetValue(_currentJobId, out var job) && job.Status == TestJobStatus.Running)
+                    {
+                        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        job.Status = TestJobStatus.Failed;
+                        job.Error = "Job cleared manually (stuck or orphaned)";
+                        job.FinishedUnixMs = now;
+                        job.LastUpdateUnixMs = now;
+                        McpLog.Warn($"[TestJobManager] Manually cleared stuck job {_currentJobId}");
+                        cleared = true;
+                    }
+
+                    _currentJobId = null;
                 }
 
-                if (Jobs.TryGetValue(_currentJobId, out var job) && job.Status == TestJobStatus.Running)
+                // Mirror the auto-cleanup at GetJob: when the running flag leaks (e.g. init
+                // timeout nulled _currentJobId but never reset IsRunning), the manual recovery
+                // path must reset it too. Otherwise preflight(requires_no_tests) blocks every
+                // subsequent run_tests, making this very API unreachable.
+                if (TestRunStatus.IsRunning)
                 {
-                    long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    job.Status = TestJobStatus.Failed;
-                    job.Error = "Job cleared manually (stuck or orphaned)";
-                    job.FinishedUnixMs = now;
-                    job.LastUpdateUnixMs = now;
-                    McpLog.Warn($"[TestJobManager] Manually cleared stuck job {_currentJobId}");
-                    cleared = true;
+                    TestRunStatus.MarkFinished();
                 }
-
-                _currentJobId = null;
             }
             PersistToSessionState(force: true);
             return cleared;

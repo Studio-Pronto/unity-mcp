@@ -145,7 +145,11 @@ class GetTestJobResponse(MCPResponse):
 
 @mcp_for_unity_tool(
     group="testing",
-    description="Starts a Unity test run asynchronously and returns a job_id immediately. Poll with get_test_job for progress.",
+    description=(
+        "Starts a Unity test run asynchronously and returns a job_id immediately. "
+        "Poll with get_test_job for progress. Pass clear_stuck=True to recover from "
+        "a stuck 'tests_running' state without starting a new run."
+    ),
     annotations=ToolAnnotations(
         title="Run Tests",
         destructiveHint=True,
@@ -167,13 +171,20 @@ async def run_tests(
                                     "Include details for failed/skipped tests only (default: false)"] = False,
     include_details: Annotated[bool,
                                "Include details for all tests (default: false)"] = False,
+    clear_stuck: Annotated[bool,
+                           "Force-clear an orphaned/stuck test job and return immediately "
+                           "without starting a new run. Use to recover from a stuck "
+                           "'tests_running' state. When set, other filter params are ignored."] = False,
 ) -> RunTestsStartResponse | MCPResponse:
     unity_instance = await get_unity_instance_from_context(ctx)
 
-    # Test runs need a fresh compile to pick up source edits made before the run.
-    gate = await preflight(ctx, requires_no_tests=True, wait_for_no_compile=True, refresh_if_dirty=True)
-    if isinstance(gate, MCPResponse):
-        return gate
+    # clear_stuck is the recovery path for a stuck is_running flag — don't gate it
+    # on the very flag it resets, or recovery becomes unreachable from MCP.
+    if not clear_stuck:
+        # Test runs need a fresh compile to pick up source edits made before the run.
+        gate = await preflight(ctx, requires_no_tests=True, wait_for_no_compile=True, refresh_if_dirty=True)
+        if isinstance(gate, MCPResponse):
+            return gate
 
     def _coerce_string_list(value) -> list[str] | None:
         if value is None:
@@ -186,6 +197,8 @@ async def run_tests(
         return None
 
     params: dict[str, Any] = {"mode": mode}
+    if clear_stuck:
+        params["clear_stuck"] = True
     if (t := _coerce_string_list(test_names)):
         params["testNames"] = t
     if (g := _coerce_string_list(group_names)):
@@ -208,6 +221,10 @@ async def run_tests(
 
     if isinstance(response, dict):
         if not response.get("success", True):
+            return MCPResponse(**response)
+        if clear_stuck:
+            # C# returns {success, data: {cleared: bool}} for clear_stuck — that shape
+            # doesn't satisfy RunTestsStartData (job_id is required), so parse as MCPResponse.
             return MCPResponse(**response)
         return RunTestsStartResponse(**response)
     return MCPResponse(success=False, error=str(response))
