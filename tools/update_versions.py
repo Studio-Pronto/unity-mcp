@@ -108,8 +108,19 @@ def update_manifest_json(new_version: str, dry_run: bool = False) -> bool:
     return True
 
 
-def update_pyproject_toml(new_version: str, dry_run: bool = False) -> bool:
-    """Update version in Server/pyproject.toml."""
+def update_pyproject_toml(new_version: str, dry_run: bool = False, skip_fork: bool = False) -> bool:
+    """Update version in Server/pyproject.toml.
+
+    Set skip_fork=True for fork versions (e.g. 9.7.0-fork.1) — pyproject.toml is
+    published to PyPI as mcpforunityserver and must stay PEP 440 valid, so the
+    fork keeps it at the upstream version rather than adding the fork suffix.
+    """
+    if skip_fork:
+        print(
+            f"✓ Skipping {PYPROJECT_TOML.relative_to(REPO_ROOT)} "
+            f"(fork version — kept on upstream PEP 440 version for PyPI)")
+        return False
+
     if not PYPROJECT_TOML.exists():
         print(f"Warning: {PYPROJECT_TOML.relative_to(REPO_ROOT)} not found")
         return False
@@ -259,7 +270,7 @@ def main() -> int:
         if update_manifest_json(version, args.dry_run):
             updates_made.append("manifest.json")
 
-        if update_pyproject_toml(version, args.dry_run):
+        if update_pyproject_toml(version, args.dry_run, skip_fork="-fork." in version):
             updates_made.append("Server/pyproject.toml")
 
         if update_server_readme(version, args.dry_run):

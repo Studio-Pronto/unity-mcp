@@ -17,7 +17,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATOR_DIR="$REPO_ROOT/MCPForUnity/Editor/Clients/Configurators"
 KEEP_CONFIGURATOR="ClaudeCodeConfigurator"
 
-UPSTREAM_REF="${1:-upstream/main}"
+# Detect --fixup-only mode: skips fetch+merge, only applies fork fixups
+FIXUP_ONLY=false
+if [[ "${1:-}" == "--fixup-only" ]]; then
+    FIXUP_ONLY=true
+    UPSTREAM_REF=""
+else
+    UPSTREAM_REF="${1:-upstream/main}"
+fi
 
 # --- Pre-flight checks -------------------------------------------------------
 
@@ -32,21 +39,23 @@ if [[ "$CURRENT_BRANCH" != "main" ]]; then
     exit 1
 fi
 
-# --- Fetch & merge upstream ---------------------------------------------------
+# --- Fetch & merge upstream (skipped in --fixup-only mode) -------------------
 
-echo "Fetching upstream..."
-git -C "$REPO_ROOT" fetch upstream
+if ! $FIXUP_ONLY; then
+    echo "Fetching upstream..."
+    git -C "$REPO_ROOT" fetch upstream
 
-echo "Merging $UPSTREAM_REF..."
-if ! git -C "$REPO_ROOT" merge "$UPSTREAM_REF" -m "Merge $UPSTREAM_REF into fork"; then
-    echo ""
-    echo "Merge conflicts detected. Resolve them, then run:"
-    echo "  git commit"
-    echo "  ./tools/update_fork.sh --fixup-only"
-    exit 1
+    echo "Merging $UPSTREAM_REF..."
+    if ! git -C "$REPO_ROOT" merge "$UPSTREAM_REF" -m "Merge $UPSTREAM_REF into fork"; then
+        echo ""
+        echo "Merge conflicts detected. Resolve them, then run:"
+        echo "  git commit"
+        echo "  ./tools/update_fork.sh --fixup-only"
+        exit 1
+    fi
 fi
 
-# --- Fork fixups (also reachable via --fixup-only) ----------------------------
+# --- Fork fixups --------------------------------------------------------------
 
 apply_fixups() {
     # 1. Remove non-ClaudeCode configurators
@@ -81,7 +90,7 @@ print(v.split('-fork')[0])
 
     # 3. Regenerate uv.lock
     echo "Regenerating uv.lock..."
-    (cd "$REPO_ROOT/Server" && uv lock 2>/dev/null) || echo "Warning: uv lock failed (uv may not be installed)"
+    (cd "$REPO_ROOT/Server" && uv lock) || echo "Warning: uv lock failed"
 
     # 4. Stage and commit fixups
     git -C "$REPO_ROOT" add -A
@@ -92,11 +101,6 @@ print(v.split('-fork')[0])
         echo "Fork fixups committed."
     fi
 }
-
-if [[ "${1:-}" == "--fixup-only" ]]; then
-    apply_fixups
-    exit 0
-fi
 
 apply_fixups
 
