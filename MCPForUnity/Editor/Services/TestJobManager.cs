@@ -48,8 +48,10 @@ namespace MCPForUnity.Editor.Services
     /// </summary>
     internal static class TestJobManager
     {
-        // Keep this small to avoid ballooning payloads during polling.
-        private const int FailureCap = 25;
+        // Cap applied at response time so polling payloads stay bounded.
+        // Storage is uncapped so the full set survives until the run finishes (or across domain reloads via SessionState).
+        // Callers see `failures_capped: true` when the response was trimmed.
+        private const int FailureCap = 100;
         private const long StuckThresholdMs = 60_000;
         private const long DefaultInitializationTimeoutMs = 15_000; // 15 seconds default; override per-job via run_tests init_timeout param
         private const long MaxInitializationTimeoutMs = 600_000; // 10 minutes hard cap
@@ -283,7 +285,7 @@ namespace MCPForUnity.Editor.Services
                             current_test_started_unix_ms = j.CurrentTestStartedUnixMs,
                             last_finished_test_full_name = j.LastFinishedTestFullName,
                             last_finished_unix_ms = j.LastFinishedUnixMs,
-                            failures_so_far = (j.FailuresSoFar ?? new List<TestJobFailure>()).Take(FailureCap).ToList(),
+                            failures_so_far = (j.FailuresSoFar ?? new List<TestJobFailure>()).ToList(),
                             error = j.Error,
                             init_timeout_ms = j.InitTimeoutMs
                         })
@@ -457,14 +459,11 @@ namespace MCPForUnity.Editor.Services
                 if (isFailure)
                 {
                     job.FailuresSoFar ??= new List<TestJobFailure>();
-                    if (job.FailuresSoFar.Count < FailureCap)
+                    job.FailuresSoFar.Add(new TestJobFailure
                     {
-                        job.FailuresSoFar.Add(new TestJobFailure
-                        {
-                            FullName = testFullName,
-                            Message = string.IsNullOrWhiteSpace(message) ? "Test failed" : message
-                        });
-                    }
+                        FullName = testFullName,
+                        Message = string.IsNullOrWhiteSpace(message) ? "Test failed" : message
+                    });
                 }
             }
             PersistToSessionState();
@@ -570,8 +569,8 @@ namespace MCPForUnity.Editor.Services
                     stuck_suspected = IsStuck(job),
                     editor_is_focused = InternalEditorUtility.isApplicationActive,
                     blocked_reason = GetBlockedReason(job),
-                    failures_so_far = BuildFailuresPayload(job.FailuresSoFar),
-                    failures_capped = (job.FailuresSoFar != null && job.FailuresSoFar.Count >= FailureCap)
+                    failures_so_far = BuildFailuresPayload(job.FailuresSoFar, FailureCap),
+                    failures_capped = (job.FailuresSoFar != null && job.FailuresSoFar.Count > FailureCap)
                 },
                 error = job.Error,
                 result = resultPayload
@@ -625,15 +624,16 @@ namespace MCPForUnity.Editor.Services
             return (now - job.CurrentTestStartedUnixMs.Value) > StuckThresholdMs;
         }
 
-        private static object[] BuildFailuresPayload(List<TestJobFailure> failures)
+        private static object[] BuildFailuresPayload(List<TestJobFailure> failures, int cap)
         {
             if (failures == null || failures.Count == 0)
             {
                 return Array.Empty<object>();
             }
 
-            var list = new object[failures.Count];
-            for (int i = 0; i < failures.Count; i++)
+            int count = cap > 0 ? Math.Min(failures.Count, cap) : failures.Count;
+            var list = new object[count];
+            for (int i = 0; i < count; i++)
             {
                 var f = failures[i];
                 list[i] = new { full_name = f?.FullName, message = f?.Message };
