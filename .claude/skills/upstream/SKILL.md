@@ -32,18 +32,23 @@ If both are empty, report "Fork is up to date with upstream" and stop.
 
 ### 3. Build summaries
 
-For each branch that has new commits, gather the raw data:
+For each branch that has new commits, gather the raw data.
+
+**Important — use three-dot `...` for `git diff`, not two-dot `..`:**
+- `git log A..B` (two-dot) — commits reachable from B but not A. ✓ what we want.
+- `git diff A..B` (two-dot) — direct tree diff. Includes fork-only changes inverted (appearing as deletions). ✗ misleading.
+- `git diff A...B` (three-dot) — diff of B against the merge base with A. Shows only what B did since divergence. ✓ what we want.
 
 **upstream/main:**
 ```bash
 git log --oneline --no-merges HEAD..upstream/main
-git diff --stat HEAD..upstream/main
+git diff --stat HEAD...upstream/main
 ```
 
 **upstream/beta (only what's not already in main):**
 ```bash
 git log --oneline --no-merges upstream/main..upstream/beta
-git diff --stat upstream/main..upstream/beta
+git diff --stat upstream/main...upstream/beta
 ```
 
 ### 4. Present results
@@ -66,14 +71,16 @@ For `upstream/beta`, only show what's beta-only (not already in main). Same form
 
 ### 5. Highlight areas of concern
 
-After the tables, note any changes that touch files we've modified in the fork. These are likely to cause merge conflicts. Check by comparing:
+After the tables, note any changes that touch files we've modified in the fork. These are likely to cause merge conflicts. Use the merge base, not `HEAD`:
 
 ```bash
-# Files changed upstream that we've also changed since our last upstream merge
-git log --format=%H --merges --grep="upstream" -1  # find last upstream merge
+MERGE_BASE=$(git merge-base HEAD upstream/main)
+UPSTREAM_FILES=$(git diff --name-only "$MERGE_BASE"..upstream/main)
+FORK_FILES=$(git diff --name-only "$MERGE_BASE"..HEAD)
+comm -12 <(echo "$UPSTREAM_FILES" | sort -u) <(echo "$FORK_FILES" | sort -u)
 ```
 
-Then intersect upstream's changed files with our fork-only changed files. List any overlapping files as potential conflict areas.
+The intersection is the set of files both sides have touched since divergence — the likely conflict surface. List them as potential conflict areas.
 
 ### 6. Suggest next step
 
