@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using NUnit.Framework;
+using Newtonsoft.Json.Linq;
 using MCPForUnity.Editor.Services;
 using UnityEditor;
 
@@ -307,9 +308,78 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             Assert.IsNotEmpty(phase, "LastActivityPhase should never return empty string");
 
             var validPhases = new[] { "idle", "compiling", "domain_reload", "asset_import",
-                "running_tests", "playmode_transition", "unknown" };
+                "running_tests", "playmode_transition", "playing", "unknown" };
             CollectionAssert.Contains(validPhases, phase,
                 $"LastActivityPhase '{phase}' should be one of the known phases");
+        }
+
+        /// <summary>
+        /// ComputeActivityPhase is the single source of truth for activity.phase, shared by OnUpdate's
+        /// change-detection and BuildSnapshot. Precedence is first-match-wins. A settled, interactive Play
+        /// session reports the steady "playing" phase; "playmode_transition" is reserved for the brief
+        /// enter/exit window only (regression guard for the whole-session "playmode_transition" bug).
+        /// </summary>
+        [Test]
+        public void EditorStateCache_ComputeActivityPhase_FollowsPrecedence()
+        {
+            // Args: (testsRunning, isCompiling, domainReloadPending, isUpdating, isPlayModeChanging, isPlaying)
+            Assert.AreEqual("idle",
+                EditorStateCache.ComputeActivityPhase(false, false, false, false, false, false));
+            Assert.AreEqual("playing",
+                EditorStateCache.ComputeActivityPhase(false, false, false, false, false, true),
+                "Settled, interactive Play mode should report the steady 'playing' phase, not a transition");
+            Assert.AreEqual("playmode_transition",
+                EditorStateCache.ComputeActivityPhase(false, false, false, false, true, false),
+                "Entering play (changing, not yet playing) should report a transition");
+            Assert.AreEqual("playmode_transition",
+                EditorStateCache.ComputeActivityPhase(false, false, false, false, true, true),
+                "An active transition outranks the steady 'playing' phase (exiting play)");
+            Assert.AreEqual("asset_import",
+                EditorStateCache.ComputeActivityPhase(false, false, false, true, true, true));
+            Assert.AreEqual("domain_reload",
+                EditorStateCache.ComputeActivityPhase(false, false, true, true, true, true));
+            Assert.AreEqual("compiling",
+                EditorStateCache.ComputeActivityPhase(false, true, true, true, true, true));
+            Assert.AreEqual("running_tests",
+                EditorStateCache.ComputeActivityPhase(true, true, true, true, true, true));
+        }
+
+        /// <summary>
+        /// editor.play_mode.is_changing must reflect the transition window (_isPlayModeChanging), NOT
+        /// EditorApplication.isPlayingOrWillChangePlaymode which Unity holds true for the entire Play
+        /// session. Drives the private field via reflection and invokes the private BuildSnapshot directly
+        /// (poking the field alone would not rebuild the cached snapshot). The is_changing assertions are
+        /// independent of the surrounding editor state; the phase assertion holds because EditMode tests run
+        /// in a quiescent editor (not compiling/importing/reloading, and TestRunStatus is MCP-only).
+        /// </summary>
+        [Test]
+        public void EditorStateCache_IsChanging_TracksTransitionWindowNotWholeSession()
+        {
+            var type = typeof(EditorStateCache);
+            var field = type.GetField("_isPlayModeChanging", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(field, "Could not find _isPlayModeChanging field");
+            var build = type.GetMethod("BuildSnapshot", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(build, "Could not find BuildSnapshot method");
+
+            bool original = (bool)field.GetValue(null);
+            try
+            {
+                field.SetValue(null, true);
+                var changing = (JObject)build.Invoke(null, new object[] { "test" });
+                Assert.IsTrue((bool)changing["editor"]["play_mode"]["is_changing"],
+                    "is_changing should be true during the transition window");
+                Assert.AreEqual("playmode_transition", (string)changing["activity"]["phase"],
+                    "While transitioning, phase should be 'playmode_transition'");
+
+                field.SetValue(null, false);
+                var settled = (JObject)build.Invoke(null, new object[] { "test" });
+                Assert.IsFalse((bool)settled["editor"]["play_mode"]["is_changing"],
+                    "is_changing should be false once the transition settles (regression: was true all session)");
+            }
+            finally
+            {
+                field.SetValue(null, original);
+            }
         }
 
         #endregion

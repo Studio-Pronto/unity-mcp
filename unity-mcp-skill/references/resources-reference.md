@@ -34,35 +34,37 @@ mcpforunity://{category}/{resource_path}[?query_params]
 
 **Purpose:** Editor readiness snapshot - check before tool operations.
 
-**Returns:**
+**Returns** (`schema_version: unity-mcp/editor_state@2`; nested - `ready_for_tools` lives under `advice`):
 ```json
 {
-  "unity_version": "2022.3.10f1",
-  "is_compiling": false,
-  "is_domain_reload_pending": false,
-  "play_mode": {
-    "is_playing": false,
-    "is_paused": false
+  "schema_version": "unity-mcp/editor_state@2",
+  "observed_at_unix_ms": 1730000000000,
+  "editor": {
+    "is_focused": true,
+    "play_mode": { "is_playing": true, "is_paused": false, "is_changing": false },
+    "active_scene": { "path": "Assets/Scenes/Main.unity", "name": "Main" }
   },
-  "active_scene": {
-    "path": "Assets/Scenes/Main.unity",
-    "name": "Main"
+  "activity": { "phase": "playing", "since_unix_ms": 1730000000000, "reasons": ["playmode"] },
+  "compilation": { "is_compiling": false, "is_domain_reload_pending": false },
+  "assets": { "is_updating": false, "refresh": { "is_refresh_in_progress": false } },
+  "tests": { "is_running": false },
+  "advice": {
+    "ready_for_tools": true,
+    "blocking_reasons": [],
+    "recommended_retry_after_ms": 0,
+    "recommended_next_action": "none"
   },
-  "ready_for_tools": true,
-  "blocking_reasons": [],
-  "recommended_retry_after_ms": null,
-  "staleness": {
-    "age_ms": 150,
-    "is_stale": false
-  }
+  "staleness": { "age_ms": 150, "is_stale": false }
 }
 ```
 
 **Key Fields:**
-- `ready_for_tools`: Only proceed if `true`
-- `is_compiling`: Wait if `true`
-- `blocking_reasons`: Array explaining why tools might fail
-- `recommended_retry_after_ms`: Suggested wait time
+- `advice.ready_for_tools`: Only proceed if `true`
+- `advice.blocking_reasons`: Why tools might fail - one of `compiling`, `domain_reload`, `running_tests`, `asset_refresh`, `stale_status` (play mode is never blocking)
+- `advice.recommended_retry_after_ms`: Suggested wait time before retrying
+- `compilation.is_compiling` / `is_domain_reload_pending`: Wait if `true`
+- `activity.phase`: What the editor is doing - one of `idle`, `compiling`, `domain_reload`, `asset_import`, `running_tests`, `playmode_transition` (entering/exiting play), or `playing` (settled, interactive in Play mode). `since_unix_ms` is when the current phase began.
+- `editor.play_mode.is_changing`: `true` **only** during the brief enter/exit transition window - not for the whole Play session. A settled Play session reports `is_playing: true`, `is_changing: false`, `activity.phase: "playing"`.
 
 ### mcpforunity://editor/selection
 

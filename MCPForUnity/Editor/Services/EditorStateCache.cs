@@ -42,6 +42,18 @@ namespace MCPForUnity.Editor.Services
         private static bool _lastTrackedTestsRunning;
         private static string _lastTrackedActivityPhase;
 
+        // Play-mode transition tracking. True ONLY during an enter/exit transition window, driven by
+        // playModeStateChanged events. Deliberately NOT EditorApplication.isPlayingOrWillChangePlaymode,
+        // which Unity holds true for the entire Play session (and, per Unity docs, only signals entering
+        // play, never exiting) — that superset is what made a settled Play session look like a transition.
+        private static bool _isPlayModeChanging;
+
+        // Phase-entry tracking so activity.since_unix_ms reports when the current phase began rather than
+        // the snapshot build time. Owned exclusively by BuildSnapshot — see the note there for why this
+        // must stay separate from _lastTrackedActivityPhase.
+        private static long _activityPhaseSinceUnixMs;
+        private static string _lastBuiltActivityPhase;
+
         /// <summary>
         /// Last known activity phase, safe to read from background threads (string reads are atomic).
         /// Used by WebSocket pong messages to inform the server of Unity's current state.
@@ -260,10 +272,16 @@ namespace MCPForUnity.Editor.Services
             {
                 _sequence = 0;
                 _observedUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                // Seed transition state so a domain reload that happens DURING play-mode entry
+                // (ExitingEditMode → reload → EnteredPlayMode wipes static state) doesn't briefly report a
+                // settled phase. Best-effort; corrected by the next playModeStateChanged event.
+                _isPlayModeChanging = EditorApplication.isPlayingOrWillChangePlaymode && !EditorApplication.isPlaying;
+
                 _cached = BuildSnapshot("init");
 
                 EditorApplication.update += OnUpdate;
-                EditorApplication.playModeStateChanged += _ => ForceUpdate("playmode");
+                EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 
                 AssemblyReloadEvents.beforeAssemblyReload += () =>
                 {
@@ -282,6 +300,24 @@ namespace MCPForUnity.Editor.Services
             {
                 McpLog.Error($"[EditorStateCache] Failed to initialise: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange change)
+        {
+            switch (change)
+            {
+                case PlayModeStateChange.ExitingEditMode: // pressed Play — transition into play begins
+                case PlayModeStateChange.ExitingPlayMode: // pressed Stop — transition out of play begins
+                    _isPlayModeChanging = true;
+                    break;
+                case PlayModeStateChange.EnteredPlayMode:  // settled, interactive in play
+                case PlayModeStateChange.EnteredEditMode:  // settled back in edit
+                    _isPlayModeChanging = false;
+                    break;
+            }
+            // Unconditional: every _isPlayModeChanging flip must be captured in the snapshot, so the
+            // OnUpdate hasChanges early-out can never strand a stale is_changing value.
+            ForceUpdate("playmode");
         }
 
         private static void OnUpdate()
@@ -311,27 +347,8 @@ namespace MCPForUnity.Editor.Services
             bool isUpdating = EditorApplication.isUpdating;
             bool testsRunning = TestRunStatus.IsRunning;
 
-            var activityPhase = "idle";
-            if (testsRunning)
-            {
-                activityPhase = "running_tests";
-            }
-            else if (isCompiling)
-            {
-                activityPhase = "compiling";
-            }
-            else if (_domainReloadPending)
-            {
-                activityPhase = "domain_reload";
-            }
-            else if (isUpdating)
-            {
-                activityPhase = "asset_import";
-            }
-            else if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                activityPhase = "playmode_transition";
-            }
+            var activityPhase = ComputeActivityPhase(
+                testsRunning, isCompiling, _domainReloadPending, isUpdating, _isPlayModeChanging, isPlaying);
 
             bool hasChanges = compilationEdge
                 || _lastTrackedScenePath != scenePath
@@ -372,6 +389,25 @@ namespace MCPForUnity.Editor.Services
             }
         }
 
+        /// <summary>
+        /// Single source of truth for the activity phase, shared by OnUpdate's change-detection and
+        /// BuildSnapshot's emitted snapshot so the two can never disagree. Precedence is first-match-wins.
+        /// "playmode_transition" covers only the brief enter/exit window (see <see cref="_isPlayModeChanging"/>);
+        /// a settled, interactive Play session reports the steady "playing" phase.
+        /// </summary>
+        internal static string ComputeActivityPhase(
+            bool testsRunning, bool isCompiling, bool domainReloadPending,
+            bool isUpdating, bool isPlayModeChanging, bool isPlaying)
+        {
+            if (testsRunning) return "running_tests";
+            if (isCompiling) return "compiling";
+            if (domainReloadPending) return "domain_reload";
+            if (isUpdating) return "asset_import";
+            if (isPlayModeChanging) return "playmode_transition";
+            if (isPlaying) return "playing";
+            return "idle";
+        }
+
         private static JObject BuildSnapshot(string reason)
         {
             _sequence++;
@@ -397,26 +433,18 @@ namespace MCPForUnity.Editor.Services
             string currentJobId = TestJobManager.CurrentJobId;
             bool isFocused = InternalEditorUtility.isApplicationActive;
 
-            var activityPhase = "idle";
-            if (testsRunning)
+            var activityPhase = ComputeActivityPhase(
+                testsRunning, isCompiling, _domainReloadPending,
+                EditorApplication.isUpdating, _isPlayModeChanging, EditorApplication.isPlaying);
+
+            // Stamp when the phase was ENTERED (not when this snapshot was built) so since_unix_ms is
+            // meaningful. _lastBuiltActivityPhase is owned here and MUST stay separate from
+            // _lastTrackedActivityPhase: OnUpdate updates that one before calling ForceUpdate → BuildSnapshot,
+            // so reusing it would make the phase-entry edge invisible from inside BuildSnapshot.
+            if (activityPhase != _lastBuiltActivityPhase)
             {
-                activityPhase = "running_tests";
-            }
-            else if (isCompiling)
-            {
-                activityPhase = "compiling";
-            }
-            else if (_domainReloadPending)
-            {
-                activityPhase = "domain_reload";
-            }
-            else if (EditorApplication.isUpdating)
-            {
-                activityPhase = "asset_import";
-            }
-            else if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                activityPhase = "playmode_transition";
+                _activityPhaseSinceUnixMs = _observedUnixMs;
+                _lastBuiltActivityPhase = activityPhase;
             }
 
             var snapshot = new EditorStateSnapshot
@@ -439,7 +467,7 @@ namespace MCPForUnity.Editor.Services
                     {
                         IsPlaying = EditorApplication.isPlaying,
                         IsPaused = EditorApplication.isPaused,
-                        IsChanging = EditorApplication.isPlayingOrWillChangePlaymode
+                        IsChanging = _isPlayModeChanging
                     },
                     ActiveScene = new EditorStateActiveScene
                     {
@@ -451,7 +479,7 @@ namespace MCPForUnity.Editor.Services
                 Activity = new EditorStateActivity
                 {
                     Phase = activityPhase,
-                    SinceUnixMs = _observedUnixMs,
+                    SinceUnixMs = _activityPhaseSinceUnixMs,
                     Reasons = new[] { reason }
                 },
                 Compilation = new EditorStateCompilation
