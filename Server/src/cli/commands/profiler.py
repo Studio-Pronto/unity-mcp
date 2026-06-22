@@ -562,12 +562,16 @@ def frame_debugger_disable():
 @profiler.command("frame-debugger-events")
 @click.option("--page-size", default=50, help="Events per page (default 50).")
 @click.option("--cursor", default=None, type=int, help="Cursor offset.")
+@click.option("--include-render-state", is_flag=True, default=False,
+              help="Include per-draw render state (blend/raster/depth/stencil). Verbose.")
 @handle_unity_errors
-def frame_debugger_events(page_size, cursor):
+def frame_debugger_events(page_size, cursor, include_render_state):
     """Get Frame Debugger draw call events (paged)."""
     config = get_config()
     params = {"action": "frame_debugger_get_events", "page_size": page_size}
     if cursor is not None:
         params["cursor"] = cursor
+    if include_render_state:
+        params["include_render_state"] = True
     result = run_command("manage_profiler", params, config)
     click.echo(format_output(result, config.format))

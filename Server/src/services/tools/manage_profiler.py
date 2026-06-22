@@ -83,7 +83,9 @@ FRAME_DEBUGGER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("frame_debugger
         "MEMORY SNAPSHOTS (.snap, requires com.unity.memoryprofiler): "
         "snap_take, snap_list, snap_compare\n\n"
         "FRAME DEBUGGER: frame_debugger_enable, frame_debugger_disable, "
-        "frame_debugger_get_events (paged draw call events with shader/mesh/RT info)"
+        "frame_debugger_get_events (paged draw call events with shader/mesh/RT info, "
+        "batch_break_cause + readable text, shader_keywords; pass include_render_state=true "
+        "for per-draw blend/raster/depth/stencil state)"
     ),
     annotations=ToolAnnotations(title="Manage Profiler"),
 )
@@ -132,6 +134,8 @@ async def manage_profiler(
     search_path: Annotated[Optional[str], "Search directory for snap_list."] = None,
     snapshot_a: Annotated[Optional[str], "First snapshot path for snap_compare."] = None,
     snapshot_b: Annotated[Optional[str], "Second snapshot path for snap_compare."] = None,
+    # Frame debugger
+    include_render_state: Annotated[Optional[bool], "frame_debugger_get_events: include per-draw render state (blend/raster/depth/stencil). Verbose; default off."] = None,
 ) -> dict[str, Any]:
     action_lower = action.lower()
     if action_lower not in ALL_ACTIONS:
@@ -162,6 +166,7 @@ async def manage_profiler(
         "search_path": search_path,
         "snapshot_a": snapshot_a,
         "snapshot_b": snapshot_b,
+        "include_render_state": include_render_state,
     }
     for key, val in param_map.items():
         if val is not None:

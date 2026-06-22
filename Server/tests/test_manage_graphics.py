@@ -12,6 +12,7 @@ from services.tools.manage_graphics import (
     VOLUME_ACTIONS,
     BAKE_ACTIONS,
     STATS_ACTIONS,
+    RENDER_GRAPH_ACTIONS,
     PIPELINE_ACTIONS,
     FEATURE_ACTIONS,
     SKYBOX_ACTIONS,
@@ -51,7 +52,7 @@ def mock_unity(monkeypatch):
 def test_all_actions_is_union_of_sub_lists():
     expected = set(
         ["ping"] + VOLUME_ACTIONS + BAKE_ACTIONS + STATS_ACTIONS
-        + PIPELINE_ACTIONS + FEATURE_ACTIONS + SKYBOX_ACTIONS
+        + RENDER_GRAPH_ACTIONS + PIPELINE_ACTIONS + FEATURE_ACTIONS + SKYBOX_ACTIONS
     )
     assert set(ALL_ACTIONS) == expected
 
@@ -61,7 +62,7 @@ def test_no_duplicate_actions():
 
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 40
+    assert len(ALL_ACTIONS) == 42
 
 
 def test_volume_actions_count():
@@ -73,7 +74,11 @@ def test_bake_actions_count():
 
 
 def test_stats_actions_count():
-    assert len(STATS_ACTIONS) == 4
+    assert len(STATS_ACTIONS) == 5
+
+
+def test_render_graph_actions_count():
+    assert len(RENDER_GRAPH_ACTIONS) == 1
 
 
 def test_pipeline_actions_count():
@@ -440,12 +445,57 @@ def test_stats_set_scene_debug_sends_mode(mock_unity):
     assert mock_unity["params"]["mode"] == "Wireframe"
 
 
+def test_stats_set_scene_debug_forwards_capture(mock_unity):
+    result = asyncio.run(
+        manage_graphics(
+            SimpleNamespace(),
+            action="stats_set_scene_debug",
+            mode="Overdraw",
+            capture=True,
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["mode"] == "Overdraw"
+    assert mock_unity["params"]["capture"] is True
+
+
 def test_stats_get_memory_sends_action(mock_unity):
     result = asyncio.run(
         manage_graphics(SimpleNamespace(), action="stats_get_memory")
     )
     assert result["success"] is True
     assert mock_unity["params"]["action"] == "stats_get_memory"
+
+
+def test_stats_get_texture_streaming_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_graphics(SimpleNamespace(), action="stats_get_texture_streaming")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "stats_get_texture_streaming"
+
+
+def test_render_graph_get_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_graphics(SimpleNamespace(), action="render_graph_get")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "render_graph_get"
+
+
+def test_render_graph_get_forwards_params(mock_unity):
+    result = asyncio.run(
+        manage_graphics(
+            SimpleNamespace(), action="render_graph_get",
+            graph="UniversalRenderGraph", execution="Main Camera",
+            page_size=10, cursor=20,
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["graph"] == "UniversalRenderGraph"
+    assert mock_unity["params"]["execution"] == "Main Camera"
+    assert mock_unity["params"]["page_size"] == 10
+    assert mock_unity["params"]["cursor"] == 20
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +658,7 @@ def test_none_params_omitted(mock_unity):
             size=None,
             resolution=None,
             mode=None,
+            capture=None,
             hdr=None,
             box_projection=None,
             positions=None,
@@ -617,6 +668,11 @@ def test_none_params_omitted(mock_unity):
             async_bake=None,
             feature_type=None,
             material=None,
+            graph=None,
+            execution=None,
+            stop=None,
+            page_size=None,
+            cursor=None,
         )
     )
     assert result["success"] is True

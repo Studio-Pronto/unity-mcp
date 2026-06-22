@@ -100,6 +100,10 @@ namespace MCPForUnity.Editor.Tools.Graphics
                         return RenderingStatsOps.SetSceneDebugMode(@params);
                     case "stats_get_memory":
                         return RenderingStatsOps.GetMemory(@params);
+                    case "stats_get_texture_streaming":
+                        return RenderingStatsOps.GetTextureStreaming(@params);
+                    case "render_graph_get":
+                        return RenderGraphOps.GetRenderGraph(@params);
 
                     // --- Pipeline actions (always available) ---
                     case "pipeline_get_info":
@@ -158,7 +162,7 @@ namespace MCPForUnity.Editor.Tools.Graphics
                             + "bake_start, bake_cancel, bake_status, bake_clear, bake_reflection_probe, "
                             + "bake_get_settings, bake_set_settings, bake_create_light_probe_group, "
                             + "bake_create_reflection_probe, bake_set_probe_positions, "
-                            + "stats_get, stats_list_counters, stats_set_scene_debug, stats_get_memory, "
+                            + "stats_get, stats_list_counters, stats_set_scene_debug, stats_get_memory, stats_get_texture_streaming, render_graph_get, "
                             + "pipeline_get_info, pipeline_set_quality, pipeline_get_settings, pipeline_set_settings, "
                             + "feature_list, feature_add, feature_remove, feature_configure, feature_toggle, feature_reorder, "
                             + "skybox_get, skybox_set_material, skybox_set_properties, skybox_set_ambient, "

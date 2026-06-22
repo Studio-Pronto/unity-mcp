@@ -321,13 +321,49 @@ def stats_memory():
     click.echo(format_output(result, config.format))
 
 
+@graphics.command("stats-texture-streaming")
+@handle_unity_errors
+def stats_texture_streaming():
+    """Get mipmap-streaming and texture-memory telemetry."""
+    config = get_config()
+    result = run_command("manage_graphics", {"action": "stats_get_texture_streaming"}, config)
+    click.echo(format_output(result, config.format))
+
+
+@graphics.command("render-graph")
+@click.option("--graph", default=None, help="Render graph name (default: first registered).")
+@click.option("--execution", default=None, help="Execution/camera name (default: first).")
+@click.option("--page-size", default=50, help="Passes per page (default 50).")
+@click.option("--cursor", default=None, type=int, help="Pass pagination cursor.")
+@click.option("--stop", is_flag=True, default=False, help="End the debug session.")
+@handle_unity_errors
+def render_graph(graph, execution, page_size, cursor, stop):
+    """Inspect URP render graph passes, resource lifetimes, merge/break + load/store (two-call: arm, then read)."""
+    config = get_config()
+    params = {"action": "render_graph_get", "page_size": page_size}
+    if graph is not None:
+        params["graph"] = graph
+    if execution is not None:
+        params["execution"] = execution
+    if cursor is not None:
+        params["cursor"] = cursor
+    if stop:
+        params["stop"] = True
+    result = run_command("manage_graphics", params, config)
+    click.echo(format_output(result, config.format))
+
+
 @graphics.command("stats-debug-mode")
 @click.option("--mode", "-m", required=True, help="Debug mode (Overdraw, Wireframe, Mipmaps, etc.).")
+@click.option("--capture", is_flag=True, default=False,
+              help="Also capture a Scene View screenshot in the new debug mode.")
 @handle_unity_errors
-def stats_debug_mode(mode):
+def stats_debug_mode(mode, capture):
     """Set Scene view debug visualization mode."""
     config = get_config()
     params = {"action": "stats_set_scene_debug", "mode": mode}
+    if capture:
+        params["capture"] = True
     result = run_command("manage_graphics", params, config)
     click.echo(format_output(result, config.format))
 

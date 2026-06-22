@@ -705,6 +705,24 @@ def test_frame_debugger_get_events_forwards_paging(mock_unity):
     assert mock_unity["params"]["cursor"] == "50"
 
 
+def test_frame_debugger_get_events_forwards_include_render_state(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="frame_debugger_get_events",
+            include_render_state=True,
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["include_render_state"] is True
+
+
+def test_frame_debugger_get_events_omits_render_state_when_unset(mock_unity):
+    asyncio.run(
+        manage_profiler(SimpleNamespace(), action="frame_debugger_get_events")
+    )
+    assert "include_render_state" not in mock_unity["params"]
+
+
 def test_object_memory_actions_count():
     assert len(OBJECT_MEMORY_ACTIONS) == 1
 

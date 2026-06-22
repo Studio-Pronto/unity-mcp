@@ -112,13 +112,34 @@ namespace MCPForUnity.Editor.Tools.Graphics
                 return new ErrorResponse("No active Scene View found.");
 
             sceneView.cameraMode = SceneView.GetBuiltinCameraMode(drawMode);
-
             sceneView.Repaint();
+
+            if (!p.GetBool("capture"))
+            {
+                return new
+                {
+                    success = true,
+                    message = $"Scene debug mode set to '{drawMode}'."
+                };
+            }
+
+            // capture=true: render the Scene View in the new debug mode (e.g. Overdraw) and
+            // return the image inline by composing manage_scene's scene-view screenshot.
+            // Note: Repaint() is queued; if the captured frame lags the mode change, re-issue.
+            var screenshotParams = new JObject
+            {
+                ["action"] = "screenshot",
+                ["capture_source"] = "scene_view",
+                ["include_image"] = true,
+            };
+            object screenshot = CommandRegistry.InvokeCommandAsync("manage_scene", screenshotParams)
+                                               .GetAwaiter().GetResult();
 
             return new
             {
                 success = true,
-                message = $"Scene debug mode set to '{drawMode}'."
+                message = $"Scene debug mode set to '{drawMode}' and Scene View captured.",
+                data = new { mode = drawMode.ToString(), screenshot }
             };
         }
 
@@ -139,6 +160,40 @@ namespace MCPForUnity.Editor.Tools.Graphics
             {
                 success = true,
                 message = "Memory stats captured.",
+                data
+            };
+        }
+
+        // === stats_get_texture_streaming ===
+        internal static object GetTextureStreaming(JObject @params)
+        {
+            const double MB = 1024.0 * 1024.0;
+            var data = new Dictionary<string, object>
+            {
+                // Memory (bytes -> MB). desired > target indicates the budget is exceeded.
+                ["totalTextureMemoryMB"] = Math.Round(Texture.totalTextureMemory / MB, 2),
+                ["desiredTextureMemoryMB"] = Math.Round(Texture.desiredTextureMemory / MB, 2),
+                ["targetTextureMemoryMB"] = Math.Round(Texture.targetTextureMemory / MB, 2),
+                ["currentTextureMemoryMB"] = Math.Round(Texture.currentTextureMemory / MB, 2),
+                ["nonStreamingTextureMemoryMB"] = Math.Round(Texture.nonStreamingTextureMemory / MB, 2),
+                // Counts
+                ["streamingTextureCount"] = Texture.streamingTextureCount,
+                ["nonStreamingTextureCount"] = Texture.nonStreamingTextureCount,
+                ["streamingMipmapUploadCount"] = Texture.streamingMipmapUploadCount,
+                ["streamingRendererCount"] = Texture.streamingRendererCount,
+                ["streamingTexturePendingLoadCount"] = Texture.streamingTexturePendingLoadCount,
+                ["streamingTextureLoadingCount"] = Texture.streamingTextureLoadingCount,
+                // Mipmap streaming quality settings
+                ["mipmapStreamingActive"] = QualitySettings.streamingMipmapsActive,
+                ["mipmapStreamingMemoryBudgetMB"] = QualitySettings.streamingMipmapsMemoryBudget,
+                ["mipmapStreamingMaxLevelReduction"] = QualitySettings.streamingMipmapsMaxLevelReduction,
+                ["mipmapStreamingRenderersPerFrame"] = QualitySettings.streamingMipmapsRenderersPerFrame,
+            };
+
+            return new
+            {
+                success = true,
+                message = "Texture streaming stats captured.",
                 data
             };
         }

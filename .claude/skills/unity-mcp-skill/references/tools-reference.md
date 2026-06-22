@@ -1032,8 +1032,12 @@ Unified rendering and graphics management: volumes/post-processing, light baking
 **Stats:**
 - `stats_get` — Get rendering counters (draw calls, batches, triangles, vertices, etc.)
 - `stats_list_counters` — List all available ProfilerRecorder counters
-- `stats_set_scene_debug` — Set Scene View debug/draw mode. Params: `mode`
+- `stats_set_scene_debug` — Set Scene View debug/draw mode (Overdraw, Wireframe, etc.). Params: `mode`, `capture` (bool — also return a Scene View screenshot in that mode)
 - `stats_get_memory` — Get rendering memory usage
+- `stats_get_texture_streaming` — Mipmap-streaming + texture-memory telemetry (desired/target/current MB, streaming counts)
+
+**Render Graph (URP/HDRP, Unity 6 / Core RP 17+, Render Graph mode):**
+- `render_graph_get` — Pass list, per-pass resource read/write, resource lifetimes, and (NRP compiler) pass merge/break reasons + load/store actions. Two-call capture: arm → render a URP camera → read again. Params: `graph`, `execution`, `page_size`, `cursor`, `stop`
 
 **Pipeline:**
 - `pipeline_get_info` — Get active render pipeline info (type, quality level, asset paths)
@@ -1098,6 +1102,13 @@ manage_graphics(action="stats_get")
 
 # Get memory usage
 manage_graphics(action="stats_get_memory")
+
+# Get texture-streaming / mipmap-streaming telemetry
+manage_graphics(action="stats_get_texture_streaming")
+
+# Render graph passes + resource lifetimes (URP, two-call: arm then read)
+manage_graphics(action="render_graph_get")
+manage_graphics(action="render_graph_get")  # call again after a URP camera renders
 
 # Get pipeline info
 manage_graphics(action="pipeline_get_info")
@@ -1450,13 +1461,14 @@ Unity Profiler session control, counter reads, memory snapshots, and Frame Debug
 | `snapshot_b` | string | For memory_compare_snapshots | Second snapshot file path |
 | `page_size` | int | No | Page size for frame_debugger_get_events (default 50) |
 | `cursor` | int | No | Cursor offset for frame_debugger_get_events |
+| `include_render_state` | bool | No | frame_debugger_get_events: include per-draw blend/raster/depth/stencil state (verbose) |
 
 **Action groups:**
 
 - **Session:** `profiler_start`, `profiler_stop`, `profiler_status`, `profiler_set_areas`
 - **Counters:** `get_frame_timing`, `get_counters`, `get_object_memory`
 - **Memory Snapshot:** `memory_take_snapshot`, `memory_list_snapshots`, `memory_compare_snapshots` (requires `com.unity.memoryprofiler`)
-- **Frame Debugger:** `frame_debugger_enable`, `frame_debugger_disable`, `frame_debugger_get_events`
+- **Frame Debugger:** `frame_debugger_enable`, `frame_debugger_disable`, `frame_debugger_get_events` — events include `batch_break_cause` (+ readable text), `shader_keywords`, shader/mesh/RT info; pass `include_render_state=true` for per-draw blend/raster/depth/stencil state
 - **Utility:** `ping`
 
 ```python
@@ -1495,6 +1507,7 @@ manage_profiler(action="memory_compare_snapshots", snapshot_a="Assets/Snapshots/
 # Frame Debugger
 manage_profiler(action="frame_debugger_enable")
 manage_profiler(action="frame_debugger_get_events", page_size=20, cursor=0)
+manage_profiler(action="frame_debugger_get_events", include_render_state=True)  # + blend/raster/depth/stencil per draw
 manage_profiler(action="frame_debugger_disable")
 ```
 

@@ -16,7 +16,13 @@ namespace MCPForUnity.Editor.Tools.Profiler
         private static readonly MethodInfo GetEventDataMethod;
         private static readonly MethodInfo GetEventInfoNameMethod;
         private static readonly Type EventDataType;
+        private static readonly MethodInfo BatchBreakCauseStringsMethod;
         private static readonly bool Available;
+
+        // Batch-break-cause index -> human-readable string (FrameDebuggerUtility.GetBatchBreakCauseStrings()).
+        // Resolved lazily and cached on first use.
+        private static string[] _batchBreakCauses;
+        private static bool _batchBreakCausesResolved;
 
         static FrameDebuggerOps()
         {
@@ -50,6 +56,9 @@ namespace MCPForUnity.Editor.Tools.Profiler
                                              null, new[] { typeof(int), EventDataType }, null);
                 }
                 GetEventDataMethod ??= UtilType.GetMethod("GetFrameEventData", BindingFlags.Public | BindingFlags.Static);
+
+                BatchBreakCauseStringsMethod = UtilType.GetMethod("GetBatchBreakCauseStrings",
+                                                   BindingFlags.Public | BindingFlags.Static);
 
                 Available = EventCountProp != null && EnableMethod != null;
             }
@@ -117,6 +126,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
             var p = new ToolParams(@params);
             int pageSize = p.GetInt("page_size") ?? 50;
             int cursor = p.GetInt("cursor") ?? 0;
+            bool includeRenderState = p.GetBool("include_render_state");
 
             int totalEvents = GetEventCount();
             if (totalEvents == 0)
@@ -192,15 +202,26 @@ namespace MCPForUnity.Editor.Tools.Profiler
                         if (eventData != null)
                         {
                             var edType = eventData.GetType();
-                            TryAddField(edType, eventData, "shaderName", entry);
-                            TryAddField(edType, eventData, "passName", entry);
-                            TryAddField(edType, eventData, "rtName", entry);
-                            TryAddField(edType, eventData, "rtWidth", entry);
-                            TryAddField(edType, eventData, "rtHeight", entry);
-                            TryAddField(edType, eventData, "vertexCount", entry);
-                            TryAddField(edType, eventData, "indexCount", entry);
-                            TryAddField(edType, eventData, "instanceCount", entry);
-                            TryAddField(edType, eventData, "meshName", entry);
+                            // Field names differ across Unity versions: 2021/2022 use unprefixed
+                            // names, Unity 6 uses m_-prefixed names. Try each candidate in order;
+                            // the first member present maps to a stable output key.
+                            TryAddFieldAny(edType, eventData, entry, "shaderName", "shaderName", "m_RealShaderName", "m_OriginalShaderName");
+                            TryAddFieldAny(edType, eventData, entry, "passName", "passName", "m_PassName");
+                            TryAddFieldAny(edType, eventData, entry, "rtName", "rtName", "m_RenderTargetName");
+                            TryAddFieldAny(edType, eventData, entry, "rtWidth", "rtWidth", "m_RenderTargetWidth");
+                            TryAddFieldAny(edType, eventData, entry, "rtHeight", "rtHeight", "m_RenderTargetHeight");
+                            TryAddFieldAny(edType, eventData, entry, "vertexCount", "vertexCount", "m_VertexCount");
+                            TryAddFieldAny(edType, eventData, entry, "indexCount", "indexCount", "m_IndexCount");
+                            TryAddFieldAny(edType, eventData, entry, "instanceCount", "instanceCount", "m_InstanceCount");
+                            TryAddFieldAny(edType, eventData, entry, "meshName", "meshName");
+                            TryAddFieldAny(edType, eventData, entry, "draw_call_count", "drawCallCount", "m_DrawCallCount");
+                            TryAddFieldAny(edType, eventData, entry, "pass_light_mode", "passLightMode", "m_PassLightMode");
+                            TryAddFieldAny(edType, eventData, entry, "shader_keywords", "shaderKeywords", "m_ShaderKeywords", "keywords");
+
+                            AddBatchBreakCause(edType, eventData, entry);
+
+                            if (includeRenderState)
+                                AddRenderState(edType, eventData, entry);
                         }
                     }
                     catch { /* skip event data for this index */ }
@@ -239,21 +260,122 @@ namespace MCPForUnity.Editor.Tools.Profiler
             catch { return 0; }
         }
 
-        private static void TryAddField(Type type, object obj, string fieldName, Dictionary<string, object> dict, string outputKey = null)
+        private static object GetMember(Type type, object obj, string memberName)
         {
             try
             {
-                var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.Instance)
-                         ?? type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
-                var prop = type.GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance)
-                        ?? type.GetProperty(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
-                object val = field != null ? field.GetValue(obj)
-                           : prop != null ? prop.GetValue(obj)
-                           : null;
-                if (val != null)
-                    dict[outputKey ?? fieldName] = val.GetType().IsEnum ? val.ToString() : val;
+                var field = type.GetField(memberName, BindingFlags.Public | BindingFlags.Instance)
+                         ?? type.GetField(memberName, BindingFlags.NonPublic | BindingFlags.Instance);
+                if (field != null) return field.GetValue(obj);
+                var prop = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance)
+                        ?? type.GetProperty(memberName, BindingFlags.NonPublic | BindingFlags.Instance);
+                if (prop != null) return prop.GetValue(obj);
             }
-            catch { /* skip unavailable fields */ }
+            catch { /* skip unavailable members */ }
+            return null;
+        }
+
+        private static void TryAddField(Type type, object obj, string fieldName, Dictionary<string, object> dict, string outputKey = null)
+        {
+            var val = GetMember(type, obj, fieldName);
+            if (val != null)
+                dict[outputKey ?? fieldName] = val.GetType().IsEnum ? val.ToString() : val;
+        }
+
+        // Adds the first present member (by exact name) under a stable output key.
+        private static void TryAddFieldAny(Type type, object obj, Dictionary<string, object> dict, string outputKey, params string[] candidateNames)
+        {
+            if (dict.ContainsKey(outputKey)) return;
+            foreach (var name in candidateNames)
+            {
+                var val = GetMember(type, obj, name);
+                if (val != null)
+                {
+                    dict[outputKey] = val.GetType().IsEnum ? val.ToString() : val;
+                    return;
+                }
+            }
+        }
+
+        private static void AddBatchBreakCause(Type edType, object eventData, Dictionary<string, object> entry)
+        {
+            object raw = GetMember(edType, eventData, "m_BatchBreakCause")
+                       ?? GetMember(edType, eventData, "batchBreakCause");
+            if (raw == null) return;
+
+            entry["batch_break_cause"] = raw.GetType().IsEnum ? raw.ToString() : raw;
+
+            int causeIndex;
+            try { causeIndex = Convert.ToInt32(raw); }
+            catch { return; }
+
+            var causes = GetBatchBreakCauses();
+            if (causes != null && causeIndex >= 0 && causeIndex < causes.Length)
+                entry["batch_break_cause_text"] = causes[causeIndex];
+        }
+
+        private static void AddRenderState(Type edType, object eventData, Dictionary<string, object> entry)
+        {
+            var renderState = new Dictionary<string, object>();
+            AddState(edType, eventData, renderState, "blend", "m_BlendState", "blendState");
+            AddState(edType, eventData, renderState, "raster", "m_RasterState", "rasterState");
+            AddState(edType, eventData, renderState, "depth", "m_DepthState", "depthState");
+            AddState(edType, eventData, renderState, "stencil", "m_StencilState", "stencilState");
+            if (renderState.Count > 0)
+                entry["render_state"] = renderState;
+        }
+
+        private static void AddState(Type edType, object eventData, Dictionary<string, object> renderState, string key, params string[] candidateNames)
+        {
+            object state = null;
+            foreach (var name in candidateNames)
+            {
+                state = GetMember(edType, eventData, name);
+                if (state != null) break;
+            }
+            var serialized = SerializeState(state);
+            if (serialized != null)
+                renderState[key] = serialized;
+        }
+
+        // Reflects a render-state struct's fields into a dict, stripping the m_ prefix and
+        // stringifying enums (BlendMode, CullMode, CompareFunction, StencilOp, etc.).
+        private static Dictionary<string, object> SerializeState(object state)
+        {
+            if (state == null) return null;
+            var result = new Dictionary<string, object>();
+            foreach (var f in state.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                object val;
+                try { val = f.GetValue(state); }
+                catch { continue; }
+                if (val == null) continue;
+                result[StripFieldPrefix(f.Name)] = val.GetType().IsEnum ? val.ToString() : val;
+            }
+            return result.Count > 0 ? result : null;
+        }
+
+        private static string StripFieldPrefix(string name)
+        {
+            string n = name;
+            if (n.StartsWith("m_") && n.Length > 2)
+                n = n.Substring(2);
+            if (n.Length > 0 && char.IsUpper(n[0]))
+                n = char.ToLowerInvariant(n[0]) + n.Substring(1);
+            return n;
+        }
+
+        private static string[] GetBatchBreakCauses()
+        {
+            if (_batchBreakCausesResolved) return _batchBreakCauses;
+            _batchBreakCausesResolved = true;
+            try
+            {
+                if (BatchBreakCauseStringsMethod != null)
+                    _batchBreakCauses = BatchBreakCauseStringsMethod.Invoke(null, null) as string[];
+            }
+            catch { _batchBreakCauses = null; }
+            return _batchBreakCauses;
         }
 
     }

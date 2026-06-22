@@ -21,6 +21,9 @@ GraphicsAction = Literal[
     "bake_set_probe_positions",
     # Stats
     "stats_get", "stats_list_counters", "stats_set_scene_debug", "stats_get_memory",
+    "stats_get_texture_streaming",
+    # Render Graph
+    "render_graph_get",
     # Pipeline
     "pipeline_get_info", "pipeline_set_quality",
     "pipeline_get_settings", "pipeline_set_settings",
@@ -38,6 +41,7 @@ ALL_ACTIONS: list[str] = list(get_args(GraphicsAction))
 VOLUME_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("volume_")]
 BAKE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("bake_")]
 STATS_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("stats_")]
+RENDER_GRAPH_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("render_graph_")]
 PIPELINE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("pipeline_")]
 FEATURE_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("feature_")]
 SKYBOX_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("skybox_")]
@@ -58,7 +62,12 @@ SKYBOX_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("skybox_")]
         "- bake_create_light_probe_group, bake_create_reflection_probe, bake_set_probe_positions\n\n"
         "STATS (for deeper profiling — CPU hotspots, counter sampling, memory — use manage_profiler):\n"
         "- stats_get: Rendering counters (draw calls, batches, triangles, etc.)\n"
-        "- stats_list_counters, stats_set_scene_debug, stats_get_memory\n\n"
+        "- stats_list_counters, stats_set_scene_debug, stats_get_memory\n"
+        "- stats_get_texture_streaming: Mipmap-streaming + texture-memory telemetry (desired/target/current MB, streaming counts)\n\n"
+        "RENDER GRAPH (URP/HDRP, Unity 6 / Core RP 17+, Render Graph mode):\n"
+        "- render_graph_get: pass list, per-pass resource read/write, resource lifetimes, and (NRP compiler) "
+        "pass merge/break reasons + load/store actions. Two-call capture: call once to arm, render a URP "
+        "camera (Game/Scene view), call again to read. Pass stop=true to end the session.\n\n"
         "PIPELINE:\n"
         "- pipeline_get_info, pipeline_set_quality, pipeline_get_settings, pipeline_set_settings\n\n"
         "FEATURES (URP only):\n"
@@ -101,6 +110,13 @@ async def manage_graphics(
     size: Annotated[Optional[list[float]], "Probe/volume size [x,y,z]."] = None,
     resolution: Annotated[Optional[int], "Probe resolution."] = None,
     mode: Annotated[Optional[str], "Probe mode or debug mode."] = None,
+    capture: Annotated[Optional[bool], "stats_set_scene_debug: also capture a Scene View screenshot in the new debug mode (e.g. Overdraw)."] = None,
+    # Render Graph (render_graph_get)
+    graph: Annotated[Optional[str], "render_graph_get: render graph name to inspect (default: first registered)."] = None,
+    execution: Annotated[Optional[str], "render_graph_get: execution/camera name to inspect (default: first)."] = None,
+    stop: Annotated[Optional[bool], "render_graph_get: end the debug session (stops per-frame debug-data generation)."] = None,
+    page_size: Annotated[Optional[int], "render_graph_get: passes per page (default 50)."] = None,
+    cursor: Annotated[Optional[int], "render_graph_get: pass pagination cursor."] = None,
     hdr: Annotated[Optional[bool], "HDR for reflection probes."] = None,
     box_projection: Annotated[Optional[bool], "Box projection for reflection probes."] = None,
     positions: Annotated[Optional[list[list[float]]], "Probe positions array."] = None,
@@ -146,7 +162,7 @@ async def manage_graphics(
         "profile_path": profile_path, "effects": effects, "path": path,
         "level": level, "position": position, "grid_size": grid_size,
         "spacing": spacing, "size": size, "resolution": resolution,
-        "mode": mode, "hdr": hdr, "box_projection": box_projection,
+        "mode": mode, "capture": capture, "hdr": hdr, "box_projection": box_projection,
         "positions": positions, "index": index, "active": active,
         "order": order, "async": async_bake, "type": feature_type,
         "material": material, "color": color, "intensity": intensity,
@@ -156,6 +172,8 @@ async def manage_graphics(
         "fog_density": fog_density, "fog_start": fog_start,
         "fog_end": fog_end, "bounces": bounces,
         "reflection_mode": reflection_mode,
+        "graph": graph, "execution": execution, "stop": stop,
+        "page_size": page_size, "cursor": cursor,
     }
     for key, val in param_map.items():
         if val is not None:
