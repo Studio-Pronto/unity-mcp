@@ -20,6 +20,7 @@ from services.tools.manage_profiler import (
     OBJECT_MEMORY_ACTIONS,
     SNAPSHOT_ACTIONS,
     FRAME_DEBUGGER_ACTIONS,
+    EVENT_ACTIONS,
 )
 
 
@@ -58,7 +59,7 @@ def test_all_actions_is_union_of_sub_lists():
         ["ping"] + SAMPLE_ACTIONS + COUNTER_ACTIONS + FRAME_TIME_ACTIONS
         + HIERARCHY_ACTIONS + MEMORY_ACTIONS + CAPTURE_ACTIONS + CONTROL_ACTIONS
         + PHYSICS_ACTIONS + OBJECT_MEMORY_ACTIONS + SNAPSHOT_ACTIONS
-        + FRAME_DEBUGGER_ACTIONS
+        + FRAME_DEBUGGER_ACTIONS + EVENT_ACTIONS
     )
     assert set(ALL_ACTIONS) == expected
 
@@ -68,7 +69,7 @@ def test_no_duplicate_actions():
 
 
 def test_all_actions_count():
-    assert len(ALL_ACTIONS) == 41
+    assert len(ALL_ACTIONS) == 43
 
 
 def test_sample_actions_count():
@@ -733,3 +734,29 @@ def test_snapshot_actions_count():
 
 def test_frame_debugger_actions_count():
     assert len(FRAME_DEBUGGER_ACTIONS) == 3
+
+
+def test_event_actions_count():
+    assert len(EVENT_ACTIONS) == 2
+
+
+def test_event_begin_sends_action(mock_unity):
+    result = asyncio.run(
+        manage_profiler(SimpleNamespace(), action="event_begin", label="crossing")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "event_begin"
+    assert mock_unity["params"]["label"] == "crossing"
+
+
+def test_event_end_forwards_params(mock_unity):
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="event_end", label="crossing", top_n=10, min_ms=0.5
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "event_end"
+    assert mock_unity["params"]["label"] == "crossing"
+    assert mock_unity["params"]["top_n"] == 10
+    assert mock_unity["params"]["min_ms"] == 0.5

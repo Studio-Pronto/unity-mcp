@@ -72,7 +72,7 @@ namespace MCPForUnity.Editor.Tools.Graphics
             // Arm: no active session yet -> create a local editor debug session and request a render.
             if (!IsSessionActive())
             {
-                InvokeStatic("Create", LocalSessionType);
+                CreateLocalSession();
                 RequestRepaint();
                 return new
                 {
@@ -291,6 +291,20 @@ namespace MCPForUnity.Editor.Tools.Graphics
         {
             var m = StaticMethod(name, args?.Length ?? 0);
             return m?.Invoke(null, args);
+        }
+
+        // RenderGraphDebugSession.Create<T>() is a generic, parameterless factory (Core RP 17+) —
+        // there is no non-generic Create(Type) overload, so it must be bound via MakeGenericMethod.
+        // Routing it through StaticMethod (which skips generic methods) silently no-ops, leaving
+        // hasActiveDebugSession false forever, so the two-call capture never advances past "armed".
+        private static void CreateLocalSession()
+        {
+            foreach (var m in SessionType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+                if (m.Name == "Create" && m.IsGenericMethod && m.GetParameters().Length == 0)
+                {
+                    m.MakeGenericMethod(LocalSessionType).Invoke(null, null);
+                    return;
+                }
         }
 
         // Field or property (public or non-public), searching the type hierarchy so inherited

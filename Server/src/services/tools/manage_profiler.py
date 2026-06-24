@@ -36,6 +36,8 @@ ProfilerAction = Literal[
     "snap_take", "snap_list", "snap_compare",
     # Frame debugger
     "frame_debugger_enable", "frame_debugger_disable", "frame_debugger_get_events",
+    # Event window (live frame bracketing, all-thread CPU+GC)
+    "event_begin", "event_end",
 ]
 
 ALL_ACTIONS: list[str] = list(get_args(ProfilerAction))
@@ -51,6 +53,7 @@ PHYSICS_ACTIONS = ["physics_get"]
 OBJECT_MEMORY_ACTIONS = ["object_memory_get"]
 SNAPSHOT_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("snap_")]
 FRAME_DEBUGGER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("frame_debugger_")]
+EVENT_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("event_")]
 
 
 @mcp_for_unity_tool(
@@ -85,7 +88,12 @@ FRAME_DEBUGGER_ACTIONS = [a for a in ALL_ACTIONS if a.startswith("frame_debugger
         "FRAME DEBUGGER: frame_debugger_enable, frame_debugger_disable, "
         "frame_debugger_get_events (paged draw call events with shader/mesh/RT info, "
         "batch_break_cause + readable text, shader_keywords; pass include_render_state=true "
-        "for per-draw blend/raster/depth/stencil state)"
+        "for per-draw blend/raster/depth/stencil state)\n\n"
+        "EVENT WINDOW (bracket a gameplay event, all-thread CPU+GC): "
+        "event_begin (marks current frame) -> trigger the event -> event_end (per-marker self-time + GC "
+        "across ALL threads incl. Job/Burst workers, with the worst frame flagged). Reuses label/top_n/min_ms. "
+        "Pairs with deep_profiling_set for managed per-method detail. Catches transient worker-thread bursts "
+        "that hotspots_get/gc_track (trailing window, thread 0) miss."
     ),
     annotations=ToolAnnotations(title="Manage Profiler"),
 )

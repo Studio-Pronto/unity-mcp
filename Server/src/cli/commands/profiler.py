@@ -575,3 +575,31 @@ def frame_debugger_events(page_size, cursor, include_render_state):
         params["include_render_state"] = True
     result = run_command("manage_profiler", params, config)
     click.echo(format_output(result, config.format))
+
+
+@profiler.command("event-begin")
+@click.option("--label", "-l", default="default", help="Window label (default 'default').")
+@handle_unity_errors
+def event_begin(label):
+    """Mark the current profiler frame to start an event-scoped, all-thread CPU+GC capture."""
+    config = get_config()
+    params = {"action": "event_begin", "label": label}
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))
+
+
+@profiler.command("event-end")
+@click.option("--label", "-l", default="default", help="Window label (default 'default').")
+@click.option("--top-n", default=None, type=int, help="Markers per list.")
+@click.option("--min-ms", default=None, type=float, help="Minimum self-time (ms) to include.")
+@handle_unity_errors
+def event_end(label, top_n, min_ms):
+    """Analyze frames since event-begin: per-marker self-time + GC across all threads, worst frame flagged."""
+    config = get_config()
+    params = {"action": "event_end", "label": label}
+    if top_n is not None:
+        params["top_n"] = top_n
+    if min_ms is not None:
+        params["min_ms"] = min_ms
+    result = run_command("manage_profiler", params, config)
+    click.echo(format_output(result, config.format))

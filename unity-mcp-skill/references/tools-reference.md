@@ -1469,6 +1469,7 @@ Unity Profiler session control, counter reads, memory snapshots, and Frame Debug
 - **Counters:** `get_frame_timing`, `get_counters`, `get_object_memory`
 - **Memory Snapshot:** `memory_take_snapshot`, `memory_list_snapshots`, `memory_compare_snapshots` (requires `com.unity.memoryprofiler`)
 - **Frame Debugger:** `frame_debugger_enable`, `frame_debugger_disable`, `frame_debugger_get_events` — events include `batch_break_cause` (+ readable text), `shader_keywords`, shader/mesh/RT info; pass `include_render_state=true` for per-draw blend/raster/depth/stencil state
+- **Event Window:** `event_begin`, `event_end` — bracket a gameplay event; `event_end` returns per-marker self-time + GC across ALL threads (Job/Burst workers included) with the worst frame flagged. Catches transient worker-thread bursts that `hotspots_get`/`gc_track` (trailing window, thread 0) miss. Reuses `label`/`top_n`/`min_ms`.
 - **Utility:** `ping`
 
 ```python
@@ -1509,6 +1510,11 @@ manage_profiler(action="frame_debugger_enable")
 manage_profiler(action="frame_debugger_get_events", page_size=20, cursor=0)
 manage_profiler(action="frame_debugger_get_events", include_render_state=True)  # + blend/raster/depth/stencil per draw
 manage_profiler(action="frame_debugger_disable")
+
+# Event window — attribute a transient worker-thread / Burst burst (all threads, worst frame flagged)
+manage_profiler(action="event_begin", label="crossing")
+# ... reproduce the event in Play mode ...
+manage_profiler(action="event_end", label="crossing")
 ```
 
 ---

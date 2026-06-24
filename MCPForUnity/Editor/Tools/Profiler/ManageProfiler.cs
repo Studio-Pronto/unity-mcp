@@ -141,6 +141,12 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     case "frame_debugger_get_events":
                         return FrameDebuggerOps.GetEvents(@params);
 
+                    // --- Event window (live frame bracketing, all-thread CPU+GC, sync) ---
+                    case "event_begin":
+                        return EventCaptureOps.EventBegin(@params);
+                    case "event_end":
+                        return EventCaptureOps.EventEnd(@params);
+
                     default:
                         return new ErrorResponse(
                             $"Unknown action: '{action}'. Valid actions: ping, "
@@ -154,7 +160,8 @@ namespace MCPForUnity.Editor.Tools.Profiler
                             + "physics_get, "
                             + "object_memory_get, "
                             + "snap_take, snap_list, snap_compare, "
-                            + "frame_debugger_enable, frame_debugger_disable, frame_debugger_get_events");
+                            + "frame_debugger_enable, frame_debugger_disable, frame_debugger_get_events, "
+                            + "event_begin, event_end");
                 }
             }
             catch (Exception ex)
