@@ -20,8 +20,9 @@ def code():
 @click.argument("source", required=False)
 @click.option("--file", "-f", default=None, type=click.Path(exists=True), help="Read code from a file instead of argument.")
 @click.option("--no-safety-checks", is_flag=True, help="Disable blocked-pattern checks (allows File.Delete, Process.Start, etc).")
+@click.option("--using", "usings", multiple=True, help="Extra namespace to import (repeatable), e.g. --using p005.Networking.")
 @handle_unity_errors
-def execute(source: Optional[str], file: Optional[str], no_safety_checks: bool):
+def execute(source: Optional[str], file: Optional[str], no_safety_checks: bool, usings: tuple):
     """Execute C# code in Unity Editor.
 
     Code runs as a method body with access to UnityEngine and UnityEditor.
@@ -47,6 +48,8 @@ def execute(source: Optional[str], file: Optional[str], no_safety_checks: bool):
         "code": source,
         "safety_checks": not no_safety_checks,
     }
+    if usings:
+        params["usings"] = list(usings)
 
     result = run_command("execute_code", params, config)
     click.echo(format_output(result, config.format))

@@ -1,5 +1,6 @@
 """Tests for execute_code tool."""
 import asyncio
+import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -72,6 +73,28 @@ def test_execute_requires_code():
     result = asyncio.run(execute_code(SimpleNamespace(), action="execute", code=None))
     assert result["success"] is False
     assert "code" in result["message"].lower()
+
+
+def test_execute_sends_base64_encoded_code(mock_unity):
+    code = 'return $"x=\\"{1 + 1}\\"";'  # nested/interpolated quotes
+    asyncio.run(execute_code(SimpleNamespace(), action="execute", code=code))
+    assert mock_unity["params"]["codeEncoded"] is True
+    assert base64.b64decode(mock_unity["params"]["encodedCode"]).decode("utf-8") == code
+    # raw code still sent for back-compat with older C# packages
+    assert mock_unity["params"]["code"] == code
+
+
+def test_execute_forwards_usings(mock_unity):
+    asyncio.run(execute_code(
+        SimpleNamespace(), action="execute", code="return 1;",
+        usings=["p005.Networking", "MyGame.Core"],
+    ))
+    assert mock_unity["params"]["usings"] == ["p005.Networking", "MyGame.Core"]
+
+
+def test_execute_omits_usings_when_absent(mock_unity):
+    asyncio.run(execute_code(SimpleNamespace(), action="execute", code="return 1;"))
+    assert "usings" not in mock_unity["params"]
 
 
 # --- get_history action ---

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using MCPForUnity.Editor.Helpers;
 using MCPForUnity.Runtime.Helpers;
 using Microsoft.CSharp;
@@ -84,7 +85,20 @@ namespace MCPForUnity.Editor.Tools
 
         private static object HandleExecute(JObject @params)
         {
-            string code = @params["code"]?.ToString();
+            var p = new ToolParams(@params);
+
+            // Prefer base64-encoded code (escape-safe transport); fall back to raw 'code'.
+            string code;
+            if (p.GetBool("codeEncoded", false) && p.Has("encodedCode"))
+            {
+                try { code = DecodeBase64(p.Get("encodedCode")); }
+                catch (Exception e) { return new ErrorResponse($"Failed to decode 'encodedCode': {e.Message}"); }
+            }
+            else
+            {
+                code = @params["code"]?.ToString();
+            }
+
             if (string.IsNullOrWhiteSpace(code))
                 return new ErrorResponse("Required parameter 'code' is missing or empty.");
 
@@ -93,6 +107,15 @@ namespace MCPForUnity.Editor.Tools
 
             bool safetyChecks = @params["safety_checks"]?.Value<bool>() ?? true;
             string compiler = @params["compiler"]?.ToString()?.ToLowerInvariant() ?? "auto";
+
+            // Extra namespaces to import so user code can reference game types by simple name.
+            string[] usings = p.GetStringArray("usings");
+            if (usings != null)
+            {
+                foreach (var ns in usings)
+                    if (!Regex.IsMatch(ns, @"^[A-Za-z_][A-Za-z0-9_.]*$"))
+                        return new ErrorResponse($"Invalid namespace in 'usings': '{ns}'. Use plain namespace identifiers (e.g. 'My.Game.Namespace').");
+            }
 
             if (safetyChecks)
             {
@@ -104,7 +127,7 @@ namespace MCPForUnity.Editor.Tools
             try
             {
                 var startTime = DateTime.UtcNow;
-                var result = CompileAndExecute(code, compiler);
+                var result = CompileAndExecute(code, compiler, usings);
                 var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
 
                 AddToHistory(code, result, elapsed, safetyChecks, compiler);
@@ -176,9 +199,9 @@ namespace MCPForUnity.Editor.Tools
 
         // ──────────────────── Compilation ────────────────────
 
-        private static object CompileAndExecute(string code, string compiler)
+        private static object CompileAndExecute(string code, string compiler, string[] usings)
         {
-            string wrappedSource = WrapUserCode(code);
+            string wrappedSource = WrapUserCode(code, usings);
             string[] assemblyPaths = GetAssemblyPaths();
 
             Assembly compiled;
@@ -331,15 +354,21 @@ namespace MCPForUnity.Editor.Tools
 
         // ──────────────────── Shared helpers ────────────────────
 
-        private static string WrapUserCode(string code)
+        private static string WrapUserCode(string code, string[] usings)
         {
+            // Extra usings are appended to the UnityEditor line (one physical line) so the preamble
+            // stays exactly WrapperLineOffset lines and compiler error line numbers still map to user code.
+            string extraUsings = (usings != null && usings.Length > 0)
+                ? " " + string.Join(" ", usings.Select(u => $"using {u};"))
+                : string.Empty;
+
             var sb = new StringBuilder();
             sb.AppendLine("using System;");
             sb.AppendLine("using System.Collections.Generic;");
             sb.AppendLine("using System.Linq;");
             sb.AppendLine("using System.Reflection;");
             sb.AppendLine("using UnityEngine;");
-            sb.AppendLine("using UnityEditor;");
+            sb.AppendLine("using UnityEditor;" + extraUsings);
             sb.AppendLine($"public static class {WrapperClassName}");
             sb.AppendLine("{");
             sb.AppendLine($"    public static object {WrapperMethodName}()");
@@ -377,6 +406,17 @@ namespace MCPForUnity.Editor.Tools
                 }
             }
 
+            // Also reference the project's game assemblies by their compiled output, so dynamic code
+            // can use game types even if the assembly isn't currently loaded into the editor domain.
+            try
+            {
+                foreach (var t in new[] { UnityEditor.Compilation.AssembliesType.Player, UnityEditor.Compilation.AssembliesType.Editor })
+                    foreach (var asm in UnityEditor.Compilation.CompilationPipeline.GetAssemblies(t))
+                        if (!string.IsNullOrEmpty(asm.outputPath) && File.Exists(asm.outputPath))
+                            paths.Add(asm.outputPath);
+            }
+            catch { /* CompilationPipeline unavailable; loaded refs still apply */ }
+
             var result = new string[paths.Count];
             paths.CopyTo(result);
             return result;
@@ -390,6 +430,12 @@ namespace MCPForUnity.Editor.Tools
                     return $"Code contains blocked pattern: '{pattern}'. Disable safety checks with safety_checks=false if this is intentional.";
             }
             return null;
+        }
+
+        private static string DecodeBase64(string encoded)
+        {
+            byte[] data = Convert.FromBase64String(encoded);
+            return Encoding.UTF8.GetString(data);
         }
 
         private static void AddToHistory(string code, object result, double elapsedMs, bool safetyChecks, string compiler = "auto")

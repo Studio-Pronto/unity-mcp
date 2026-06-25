@@ -7,6 +7,7 @@ checks. Code is compiled in-memory via CSharpCodeProvider — no script files cr
 WARNING: This tool runs arbitrary code in the Unity Editor process.
 Safety checks block known dangerous patterns but are NOT a security sandbox.
 """
+import base64
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -26,7 +27,8 @@ from transport.legacy.unity_connection import async_send_command_with_retry
         "Actions: execute (run code), get_history (list past executions), "
         "replay (re-run a history entry), clear_history. "
         "NOTE: safety_checks blocks known dangerous patterns but is not a full sandbox. "
-        "Compiler options: 'auto' (Roslyn if available, else CodeDom), 'roslyn' (C# 12+, requires Microsoft.CodeAnalysis), 'codedom' (C# 6 only)."
+        "Compiler options: 'auto' (Roslyn if available, else CodeDom), 'roslyn' (C# 12+, requires Microsoft.CodeAnalysis), 'codedom' (C# 6 only). "
+        "Pass 'usings' to import extra namespaces (e.g. game assemblies like ['p005.Networking']) so types resolve by simple name."
     ),
     group="scripting_ext",
     annotations=ToolAnnotations(
@@ -64,6 +66,10 @@ async def execute_code(
         "'auto' uses Roslyn if Microsoft.CodeAnalysis is installed, else falls back to CodeDom. "
         "'roslyn' forces Roslyn (C# 12+). 'codedom' forces legacy CSharpCodeProvider (C# 6). Default: auto.",
     ] = "auto",
+    usings: Annotated[
+        list[str],
+        "Extra namespaces to import for 'execute' (e.g. ['p005.Networking']) so game types resolve by simple name.",
+    ] | None = None,
 ) -> dict[str, Any]:
     unity_instance = await get_unity_instance_from_context(ctx)
 
@@ -72,9 +78,13 @@ async def execute_code(
     if action == "execute":
         if code is None:
             return {"success": False, "message": "Parameter 'code' is required for 'execute' action."}
-        params_dict["code"] = code
+        params_dict["code"] = code  # raw fallback for older C# packages
+        params_dict["encodedCode"] = base64.b64encode(code.encode("utf-8")).decode("ascii")
+        params_dict["codeEncoded"] = True
         params_dict["safety_checks"] = safety_checks
         params_dict["compiler"] = compiler
+        if usings:
+            params_dict["usings"] = usings
     elif action == "replay":
         if index is None:
             return {"success": False, "message": "Parameter 'index' is required for 'replay' action."}

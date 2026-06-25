@@ -231,18 +231,6 @@ class UnityConnection:
                         logger.debug("Received ping response")
                         return data
 
-                    # Handle escaped quotes in the content
-                    if '"content":' in decoded_data:
-                        # Find the content field and its value
-                        content_start = decoded_data.find('"content":') + 9
-                        content_end = decoded_data.rfind('"', content_start)
-                        if content_end > content_start:
-                            # Replace escaped quotes in content with regular quotes
-                            content = decoded_data[content_start:content_end]
-                            content = content.replace('\\"', '"')
-                            decoded_data = decoded_data[:content_start] + \
-                                content + decoded_data[content_end:]
-
                     # Validate JSON format
                     json.loads(decoded_data)
 
