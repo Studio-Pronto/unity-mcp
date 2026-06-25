@@ -1329,10 +1329,10 @@ namespace MCPForUnity.Editor.Tools.Prefabs
             var ids = new HashSet<int>();
             foreach (var t in obj.GetComponentsInChildren<Transform>(true))
             {
-                ids.Add(t.gameObject.GetInstanceID());
+                ids.Add(t.gameObject.GetInstanceIDCompat());
                 foreach (var c in t.gameObject.GetComponents<Component>())
                 {
-                    if (c != null) ids.Add(c.GetInstanceID());
+                    if (c != null) ids.Add(c.GetInstanceIDCompat());
                 }
             }
             return ids;
@@ -1370,7 +1370,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                     // Skip internal bookkeeping properties
                     if (mod.propertyPath == "m_RootOrder" || mod.propertyPath == "m_Father") continue;
 
-                    if (filterIDs != null && !filterIDs.Contains(mod.target.GetInstanceID())) continue;
+                    if (filterIDs != null && !filterIDs.Contains(mod.target.GetInstanceIDCompat())) continue;
 
                     string targetType = mod.target.GetType().Name;
                     string objName = mod.target is Component c ? c.gameObject.name : mod.target.name;
@@ -1397,7 +1397,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                 {
                     if (ac.instanceComponent == null) continue;
                     var go = ac.instanceComponent.gameObject;
-                    if (filterIDs != null && !filterIDs.Contains(go.GetInstanceID())) continue;
+                    if (filterIDs != null && !filterIDs.Contains(go.GetInstanceIDCompat())) continue;
                     addedCompList.Add(new
                     {
                         componentType = ac.instanceComponent.GetType().Name,
@@ -1413,7 +1413,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                 {
                     if (rc.assetComponent == null) continue;
                     var containingObj = rc.containingInstanceGameObject;
-                    if (filterIDs != null && containingObj != null && !filterIDs.Contains(containingObj.GetInstanceID())) continue;
+                    if (filterIDs != null && containingObj != null && !filterIDs.Contains(containingObj.GetInstanceIDCompat())) continue;
                     removedCompList.Add(new
                     {
                         componentType = rc.assetComponent.GetType().Name,
@@ -1599,7 +1599,7 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                             var kept = new List<PropertyModification>();
                             foreach (var mod in mods)
                             {
-                                if (mod.target != null && ids.Contains(mod.target.GetInstanceID()))
+                                if (mod.target != null && ids.Contains(mod.target.GetInstanceIDCompat()))
                                     revertedPropertyMods++;
                                 else
                                     kept.Add(mod);
@@ -1610,12 +1610,12 @@ namespace MCPForUnity.Editor.Tools.Prefabs
                         // Revert structural overrides on this object
                         foreach (var ac in PrefabUtility.GetAddedComponents(prefabContents))
                         {
-                            if (ac.instanceComponent != null && ids.Contains(ac.instanceComponent.gameObject.GetInstanceID()))
+                            if (ac.instanceComponent != null && ids.Contains(ac.instanceComponent.gameObject.GetInstanceIDCompat()))
                             { ac.Revert(); revertedAddedComps++; }
                         }
                         foreach (var rc in PrefabUtility.GetRemovedComponents(prefabContents))
                         {
-                            if (rc.containingInstanceGameObject != null && ids.Contains(rc.containingInstanceGameObject.GetInstanceID()))
+                            if (rc.containingInstanceGameObject != null && ids.Contains(rc.containingInstanceGameObject.GetInstanceIDCompat()))
                             { rc.Revert(); revertedRemovedComps++; }
                         }
                         foreach (var ag in PrefabUtility.GetAddedGameObjects(prefabContents))

@@ -58,7 +58,7 @@ namespace MCPForUnity.Editor.Helpers
 
             var refInfo = new Dictionary<string, object>
             {
-                { "instanceID", unityObj.GetInstanceID() },
+                { "instanceID", unityObj.GetInstanceIDCompat() },
                 { "name", unityObj.name },
                 { "type", unityObj.GetType().Name }
             };
@@ -1043,7 +1043,7 @@ namespace MCPForUnity.Editor.Helpers
             if (_serializationDepth > MaxSerializationDepth)
             {
                 if (value is UnityEngine.Object unityObj)
-                    return JToken.FromObject(new { instanceID = unityObj.GetInstanceID(), name = unityObj.name });
+                    return JToken.FromObject(new { instanceID = unityObj.GetInstanceIDCompat(), name = unityObj.name });
                 return JValue.CreateNull();
             }
 
@@ -1051,7 +1051,7 @@ namespace MCPForUnity.Editor.Helpers
             if (value is UnityEngine.Object uo)
             {
                 if (_visitedObjects == null) _visitedObjects = new HashSet<int>();
-                int id = uo.GetInstanceID();
+                int id = uo.GetInstanceIDCompat();
                 if (_visitedObjects.Contains(id))
                     return JToken.FromObject(new { instanceID = id, name = uo.name, _circular = true });
                 _visitedObjects.Add(id);

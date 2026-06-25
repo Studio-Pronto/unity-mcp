@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MCPForUnity.Editor.Helpers;
+using MCPForUnity.Runtime.Helpers;
 using Newtonsoft.Json.Linq;
 using Unity.Collections;
 using Unity.Profiling;
@@ -179,7 +180,7 @@ namespace MCPForUnity.Editor.Tools.Profiler
                     long size = UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(obj);
                     if (size < minSizeBytes) continue;
 
-                    filtered.Add((objName, objType, size, obj.GetInstanceID()));
+                    filtered.Add((objName, objType, size, obj.GetInstanceIDCompat()));
                 }
                 catch { }
             }

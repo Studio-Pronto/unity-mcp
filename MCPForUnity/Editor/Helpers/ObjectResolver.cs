@@ -1,5 +1,6 @@
 using System;
 using MCPForUnity.Editor.Helpers;
+using MCPForUnity.Runtime.Helpers;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -42,7 +43,7 @@ namespace MCPForUnity.Editor.Helpers
                 if (compIdToken.Type == JTokenType.Integer)
                 {
                     int compId = compIdToken.ToObject<int>();
-                    UnityEngine.Object obj = EditorUtility.InstanceIDToObject(compId);
+                    UnityEngine.Object obj = UnityObjectIdCompat.InstanceIDToObjectCompat(compId);
                     if (obj != null && targetType.IsAssignableFrom(obj.GetType()))
                     {
                         return obj;
@@ -88,7 +89,7 @@ namespace MCPForUnity.Editor.Helpers
                 // This handles the case where the user provides a component's instance ID directly
                 if (typeof(Component).IsAssignableFrom(targetType) && int.TryParse(findTerm, out int directCompId))
                 {
-                    UnityEngine.Object directObj = EditorUtility.InstanceIDToObject(directCompId);
+                    UnityEngine.Object directObj = UnityObjectIdCompat.InstanceIDToObjectCompat(directCompId);
                     if (directObj != null && targetType.IsAssignableFrom(directObj.GetType()))
                     {
                         return directObj;

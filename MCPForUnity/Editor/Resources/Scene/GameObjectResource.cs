@@ -177,7 +177,7 @@ namespace MCPForUnity.Editor.Resources.Scene
                             componentData.Add(new
                             {
                                 typeName = component.GetType().FullName,
-                                instanceID = component.GetInstanceID(),
+                                instanceID = component.GetInstanceIDCompat(),
                                 _error = $"Failed to serialize: {compEx.Message}"
                             });
                         }
@@ -288,7 +288,7 @@ namespace MCPForUnity.Editor.Resources.Scene
                     serializedComponent = new
                     {
                         typeName = targetComponent.GetType().FullName,
-                        instanceID = targetComponent.GetInstanceID(),
+                        instanceID = targetComponent.GetInstanceIDCompat(),
                         _error = $"Failed to serialize: {compEx.Message}"
                     };
                 }
