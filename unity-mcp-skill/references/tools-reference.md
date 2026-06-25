@@ -719,8 +719,9 @@ Control Unity Editor state.
 
 ```python
 manage_editor(action="play")               # Enter play mode
+manage_editor(action="play", scenario="Single player (Offline)")  # Boot a Unity MPPM Play Mode Scenario (name or asset path)
 manage_editor(action="pause")              # Pause play mode
-manage_editor(action="stop")               # Exit play mode
+manage_editor(action="stop")               # Exit play mode (wedge-safe: uses the scenario's Stop() when one is active)
 
 manage_editor(action="set_active_tool", tool_name="Move")  # Move/Rotate/Scale/etc.
 

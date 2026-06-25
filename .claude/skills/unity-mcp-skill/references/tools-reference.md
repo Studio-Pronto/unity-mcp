@@ -719,8 +719,9 @@ Control Unity Editor state.
 
 ```python
 manage_editor(action="play")               # Enter play mode
+manage_editor(action="play", scenario="Single player (Offline)")  # Boot a Unity MPPM Play Mode Scenario (name or asset path)
 manage_editor(action="pause")              # Pause play mode
-manage_editor(action="stop")               # Exit play mode
+manage_editor(action="stop")               # Exit play mode (wedge-safe: uses the scenario's Stop() when one is active)
 
 manage_editor(action="set_active_tool", tool_name="Move")  # Move/Rotate/Scale/etc.
 
@@ -730,9 +731,9 @@ manage_editor(action="remove_tag", tag_name="OldTag")
 manage_editor(action="add_layer", layer_name="Projectiles")
 manage_editor(action="remove_layer", layer_name="OldLayer")
 
-manage_editor(action="open_prefab_stage", prefab_path="Assets/Prefabs/Enemy.prefab")
-manage_editor(action="save_prefab_stage")   # Save changes in the open prefab stage
-manage_editor(action="close_prefab_stage")  # Exit prefab editing mode back to main scene
+manage_prefabs(action="open_prefab_stage", prefab_path="Assets/Prefabs/Enemy.prefab")
+manage_prefabs(action="save_prefab_stage")   # Save changes in the open prefab stage
+manage_prefabs(action="close_prefab_stage")  # Exit prefab editing mode back to main scene
 
 # Package deployment (no confirmation dialog — designed for LLM-driven iteration)
 manage_editor(action="deploy_package")     # Copy configured MCPForUnity source into installed package

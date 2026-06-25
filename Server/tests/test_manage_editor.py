@@ -67,6 +67,23 @@ def test_every_action_forwards_to_unity(mock_unity, action_name):
     assert mock_unity["params"]["action"] == action_name
 
 
+# ── Play Mode Scenario (MPPM) ────────────────────────────────────────
+
+
+def test_play_forwards_scenario(mock_unity):
+    result = asyncio.run(
+        manage_editor(SimpleNamespace(), action="play", scenario="Single player (Offline)")
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["action"] == "play"
+    assert mock_unity["params"]["scenario"] == "Single player (Offline)"
+
+
+def test_play_omits_scenario_when_unset(mock_unity):
+    asyncio.run(manage_editor(SimpleNamespace(), action="play"))
+    assert "scenario" not in mock_unity["params"]
+
+
 # ── Python-only actions ──────────────────────────────────────────────
 
 

@@ -53,6 +53,12 @@ namespace MCPForUnity.Editor.Tools
                 case "play":
                     try
                     {
+                        // Optional: boot a Unity MPPM Play Mode Scenario (by asset path or name).
+                        string scenario = p.Get("scenario");
+                        if (!string.IsNullOrEmpty(scenario))
+                        {
+                            return PlayModeScenarioOps.PlayScenario(scenario);
+                        }
                         if (!EditorApplication.isPlaying)
                         {
                             EditorApplication.isPlaying = true;
@@ -81,19 +87,10 @@ namespace MCPForUnity.Editor.Tools
                         return new ErrorResponse($"Error pausing/resuming game: {e.Message}");
                     }
                 case "stop":
-                    try
-                    {
-                        if (EditorApplication.isPlaying)
-                        {
-                            EditorApplication.isPlaying = false;
-                            return new SuccessResponse("Exited play mode.");
-                        }
-                        return new SuccessResponse("Already stopped (not in play mode).");
-                    }
-                    catch (Exception e)
-                    {
-                        return new ErrorResponse($"Error stopping play mode: {e.Message}");
-                    }
+                    // Wedge-safe: routes through PlayModeScenarioManager.Stop() when an MPPM scenario is
+                    // active (a plain isPlaying=false under a scenario wedges PlayMode test runs), else
+                    // falls back to the plain stop.
+                    return PlayModeScenarioOps.WedgeSafeStop();
 
                 // Tool Control
                 case "set_active_tool":

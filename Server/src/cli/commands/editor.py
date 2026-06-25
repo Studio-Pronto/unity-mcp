@@ -18,11 +18,16 @@ def editor():
 
 
 @editor.command("play")
+@click.option("--scenario", default=None,
+              help="Boot a Unity MPPM Play Mode Scenario by name or asset path.")
 @handle_unity_errors
-def play():
-    """Enter play mode."""
+def play(scenario):
+    """Enter play mode (optionally under an MPPM Play Mode Scenario)."""
     config = get_config()
-    result = run_command("manage_editor", {"action": "play"}, config)
+    params = {"action": "play"}
+    if scenario:
+        params["scenario"] = scenario
+    result = run_command("manage_editor", params, config)
     click.echo(format_output(result, config.format))
     if result.get("success"):
         print_success("Entered play mode")
