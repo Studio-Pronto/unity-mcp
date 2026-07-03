@@ -227,7 +227,7 @@ namespace MCPForUnity.Editor.Helpers
             }
 
             // Fork always uses #main since enhancements are ahead of upstream version tags
-            return "git+https://github.com/vbucc/unity-mcp#subdirectory=Server";
+            return "git+https://github.com/Studio-Pronto/unity-mcp#subdirectory=Server";
         }
 
         /// <summary>
