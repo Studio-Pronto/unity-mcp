@@ -272,11 +272,14 @@ class PluginHub(WebSocketEndpoint):
                 logger.info(
                     f"Plugin session {session_id} disconnected ({close_code})")
 
-        # Re-sync tool visibility outside the hub lock to reflect remaining sessions
+        # Re-sync tool visibility outside the hub lock to reflect remaining
+        # sessions. When the union went empty (last Unity disconnected, e.g.
+        # domain reload) the sync is a frozen no-op — skip the notification so
+        # every connected MCP client isn't told to re-fetch an unchanged list.
         if session_id:
             try:
-                await cls._sync_server_tool_visibility()
-                await cls._notify_mcp_tool_list_changed()
+                if await cls._sync_server_tool_visibility():
+                    await cls._notify_mcp_tool_list_changed()
             except Exception:
                 logger.debug(
                     "Failed to re-sync tool visibility after disconnect",
@@ -576,7 +579,7 @@ class PluginHub(WebSocketEndpoint):
             )
 
     @classmethod
-    async def _sync_server_tool_visibility(cls, registered_tools: list | None = None) -> None:
+    async def _sync_server_tool_visibility(cls, registered_tools: list | None = None) -> bool:
         """Sync FastMCP server-level tool group visibility to match Unity's state.
 
         When Unity sends ``register_tools``, some groups may have been toggled
@@ -595,10 +598,16 @@ class PluginHub(WebSocketEndpoint):
             registered_tools: If provided, use this explicit tool list (stdio
                 fallback path).  If None, query the registry for the union of
                 all connected sessions' tools (HTTP multi-instance path).
+
+        Returns:
+            True when the visibility transforms were rewritten, False when the
+            sync was skipped (no MCP server, empty registry union, or error) —
+            callers use this to decide whether a ``tools/list_changed``
+            notification is warranted.
         """
         mcp = cls._mcp
         if mcp is None:
-            return
+            return False
 
         try:
             from services.registry import get_group_tool_names, TOOL_GROUPS
@@ -613,8 +622,20 @@ class PluginHub(WebSocketEndpoint):
             else:
                 # HTTP multi-instance: union of all connected sessions
                 if cls._registry is None:
-                    return
+                    return False
                 registered_names = await cls._registry.get_all_registered_tool_names()
+                if not registered_names:
+                    # Empty union means no Unity session currently has tools
+                    # registered — a transient all-disconnected window (every
+                    # domain reload), not a "disable everything" signal.
+                    # Disabling groups here would hide even core tools from
+                    # every MCP client ("Unknown tool" mid-reload) and bypass
+                    # the reload-retry path in send_command_for_instance.
+                    # Freeze last-known visibility; the next register_tools
+                    # re-syncs. The explicit-list branch above deliberately
+                    # keeps its semantics: an empty list from a live Unity is
+                    # affirmative data.
+                    return False
 
             group_tools = get_group_tool_names()
 
@@ -653,11 +674,13 @@ class PluginHub(WebSocketEndpoint):
                     len(mcp._transforms),
                     cls._unity_transform_start or 0,
                 )
+            return True
         except Exception:
             logger.debug(
                 "Failed to sync server-level tool visibility",
                 exc_info=True,
             )
+            return False
 
     @classmethod
     async def _notify_mcp_tool_list_changed(cls) -> None:
@@ -909,10 +932,11 @@ class PluginHub(WebSocketEndpoint):
 
         logger.debug("Evicted plugin session %s (%s)", session_id, reason)
 
-        # Re-sync tool visibility to reflect remaining sessions
+        # Re-sync tool visibility to reflect remaining sessions; skip the
+        # notification when the sync was a frozen no-op (empty union).
         try:
-            await cls._sync_server_tool_visibility()
-            await cls._notify_mcp_tool_list_changed()
+            if await cls._sync_server_tool_visibility():
+                await cls._notify_mcp_tool_list_changed()
         except Exception:
             logger.debug(
                 "Failed to re-sync tool visibility after eviction",
