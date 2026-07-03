@@ -31,6 +31,12 @@ namespace MCPForUnity.Editor.Services
                 return;
             }
 
+            if (IsMppmVirtualPlayerClone())
+            {
+                McpLog.Debug("[HTTP Auto-Start] Skipping: MPPM virtual-player clone (main editor owns the MCP bridge)");
+                return;
+            }
+
             // Only check lightweight EditorPrefs here — services like EditorConfigurationCache
             // and MCPServiceLocator may not be initialized yet on fresh editor launch.
             bool autoStartEnabled = EditorPrefs.GetBool(EditorPrefKeys.AutoStartOnLoad, false);
@@ -153,6 +159,20 @@ namespace MCPForUnity.Editor.Services
             }
 
             McpLog.Warn("[HTTP Auto-Start] Server did not become reachable after launch");
+        }
+
+        /// <summary>
+        /// MPPM virtual-player clones live under "&lt;main project&gt;/Library/VP/&lt;player&gt;"
+        /// and share the user's global EditorPrefs, so AutoStartOnLoad would make every
+        /// clone self-register as an extra Unity instance — ambiguous with the parent
+        /// project for MCP clients' path-based instance matching, breaking default
+        /// routing. The main editor owns the bridge; a clone can still be connected
+        /// manually from its MCP window. Unity documents dataPath as forward-slashed
+        /// on all platforms.
+        /// </summary>
+        private static bool IsMppmVirtualPlayerClone()
+        {
+            return Application.dataPath.Contains("/Library/VP/");
         }
 
         /// <summary>
