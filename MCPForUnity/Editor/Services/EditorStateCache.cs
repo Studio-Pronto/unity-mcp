@@ -550,11 +550,14 @@ namespace MCPForUnity.Editor.Services
                 // which prevents unnecessary _cached rebuilds, not from caching the clone.
                 var clone = (JObject)_cached.DeepClone();
 
-                // When Unity is backgrounded, OnUpdate is throttled and the
-                // cached timestamp grows stale even though the data is current.
-                // Re-stamp only in that case so the server-side staleness check
-                // still fires for genuinely unresponsive editors when focused.
-                if (!InternalEditorUtility.isApplicationActive)
+                // When the editor's update loop is legitimately throttled — backgrounded, or
+                // headless batchmode where EditorApplication.update only ticks on incoming activity —
+                // OnUpdate stops refreshing the snapshot and observed_at_unix_ms grows stale even
+                // though the data is current (answering this very request proves the main thread is
+                // live). Re-stamp so the server's >2s staleness gate doesn't wrongly mark a responsive
+                // editor not-ready. A focused, non-batch editor keeps the honest build-time stamp so
+                // staleness still catches a genuinely wedged main thread.
+                if (!InternalEditorUtility.isApplicationActive || Application.isBatchMode)
                 {
                     clone["observed_at_unix_ms"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 }

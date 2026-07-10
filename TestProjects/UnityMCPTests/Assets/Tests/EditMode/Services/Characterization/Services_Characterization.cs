@@ -382,6 +382,29 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             }
         }
 
+        /// <summary>
+        /// In headless batchmode EditorApplication.update only ticks on incoming activity, so the
+        /// snapshot's observed_at_unix_ms would otherwise freeze at the last activity edge and the
+        /// server's >2s staleness gate would wrongly report ready_for_tools=false while the editor is
+        /// idle-but-responsive. GetSnapshot() re-stamps the timestamp per read in batchmode, so the
+        /// value advances with the wall clock even with no editor activity between reads.
+        /// </summary>
+        [Test]
+        public void EditorStateCache_GetSnapshot_ReStampsObservedTimestampInBatchMode()
+        {
+            if (!UnityEngine.Application.isBatchMode)
+                Assert.Ignore("Re-stamp-in-batchmode is only observable under -batchmode.");
+
+            long first = (long)EditorStateCache.GetSnapshot()["observed_at_unix_ms"];
+            System.Threading.Thread.Sleep(10);
+            long second = (long)EditorStateCache.GetSnapshot()["observed_at_unix_ms"];
+
+            // Each read re-stamps to wall-clock now, so the value advances even with no editor activity
+            // between reads. Before the fix it froze at the last BuildSnapshot() and second == first.
+            Assert.Greater(second, first,
+                "observed_at_unix_ms must advance per read in batchmode, not freeze at the last activity edge.");
+        }
+
         #endregion
 
         #region Section 3: BridgeControlService - Transport Management
