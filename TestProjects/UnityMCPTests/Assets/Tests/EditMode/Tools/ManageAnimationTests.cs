@@ -979,7 +979,8 @@ namespace MCPForUnityTests.Editor.Tools
 
             controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
             state = controller.layers[0].stateMachine.states.First(s => s.state.name == "Walk").state;
-            Assert.AreEqual("NewClip", state.motion.name);
+            // The imported clip's object name follows its file name, not the in-memory name.
+            Assert.AreEqual(System.IO.Path.GetFileNameWithoutExtension(clipPath2), state.motion.name);
         }
 
         [Test]
@@ -1015,7 +1016,7 @@ namespace MCPForUnityTests.Editor.Tools
                 ["clipPath"] = "Assets/NonExistent/Fake.anim"
             }));
             Assert.IsFalse(result.Value<bool>("success"));
-            Assert.That(result["message"].ToString(), Does.Contain("Motion not found"));
+            Assert.That(result["message"].ToString(), Does.Contain("No asset found"));
         }
 
         // =============================================================================
@@ -1709,7 +1710,7 @@ namespace MCPForUnityTests.Editor.Tools
             var idleState = controller.layers[0].stateMachine.states.First(s => s.state.name == "Idle").state;
             Assert.AreEqual(2, idleState.transitions.Length);
             Assert.AreEqual(0.5f, idleState.transitions[1].duration, 0.001f);
-            Assert.AreNotEqual(0.5f, idleState.transitions[0].duration, 0.001f);
+            Assert.That(idleState.transitions[0].duration, Is.Not.EqualTo(0.5f).Within(0.001f));
         }
 
         [Test]

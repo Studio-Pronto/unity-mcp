@@ -24,7 +24,9 @@ namespace MCPForUnityTests.Editor.Helpers
                 argValues.Add((child as TomlString).Value);
 
             Assert.IsTrue(argValues.Contains("--from"), "Args should contain --from");
-            Assert.IsTrue(argValues.Any(a => a.Contains("mcpforunityserver")), "Args should contain PyPI package reference");
+            // The fork's default source is the Studio-Pronto git URL; the beta path still uses the PyPI name.
+            Assert.IsTrue(argValues.Any(a => a.Contains("mcpforunityserver") || a.Contains("unity-mcp#subdirectory=Server")),
+                "Args should contain the server package reference (PyPI name or git URL)");
             Assert.IsTrue(argValues.Contains("mcp-for-unity"), "Args should contain package name");
 
             // Prerelease builds include --prerelease explicit before --from

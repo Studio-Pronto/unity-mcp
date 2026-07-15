@@ -710,10 +710,10 @@ namespace MCPForUnityTests.Editor.Services.Characterization
 
         #endregion
 
-        #region StartLocalHttpServerSilent Tests
+        #region StartLocalHttpServer (quiet) Tests
 
         [Test]
-        public void StartLocalHttpServerSilent_HttpDisabled_ReturnsFalse()
+        public void StartLocalHttpServerQuiet_HttpDisabled_ReturnsFalse()
         {
             // Arrange
             EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, false);
@@ -725,7 +725,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             bool result;
             try
             {
-                result = _service.StartLocalHttpServerSilent();
+                result = _service.StartLocalHttpServer(quiet: true);
             }
             finally
             {
@@ -737,7 +737,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         [Test]
-        public void StartLocalHttpServerSilent_DoesNotThrow()
+        public void StartLocalHttpServerQuiet_DoesNotThrow()
         {
             // Arrange
             _service = new ServerManagementService();
@@ -748,8 +748,8 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             {
                 Assert.DoesNotThrow(() =>
                 {
-                    _service.StartLocalHttpServerSilent();
-                }, "StartLocalHttpServerSilent should handle all error cases gracefully without dialogs");
+                    _service.StartLocalHttpServer(quiet: true);
+                }, "StartLocalHttpServer(quiet: true) should handle all error cases gracefully without dialogs");
             }
             finally
             {
