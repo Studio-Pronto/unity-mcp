@@ -486,8 +486,13 @@ namespace MCPForUnity.Editor.Services
                 {
                     if (string.IsNullOrEmpty(scene.path))
                     {
-                        McpLog.Warn($"[TestRunnerService] Skipping unsaved scene '{scene.name}': save it manually before running tests.");
-                        continue;
+                        // RunTests.HandleCommand gates this before a job starts; reaching here means a race
+                        // or a direct RunTestsAsync caller. Fail the run (surfaced via get_test_job) rather
+                        // than let UTF's SaveModifiedSceneTask wedge the editor on a native modal.
+                        throw new InvalidOperationException(
+                            $"Cannot start a test run: unsaved untitled scene '{scene.name}' is open. Save it "
+                            + "(manage_scene action=save with name/path) or re-run run_tests with "
+                            + "discard_untitled_scenes=true.");
                     }
                     try
                     {

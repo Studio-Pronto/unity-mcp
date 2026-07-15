@@ -465,6 +465,8 @@ result = run_tests(
     test_names=["MyTests.TestPlayerMovement", "MyTests.TestEnemySpawn"],
     include_failed_tests=True
 )
+# If this fails with "unsaved_untitled_scene": save the scene via
+# manage_scene(action="save", ...) or re-run with discard_untitled_scenes=True.
 job_id = result["job_id"]
 
 # 3. Wait for results

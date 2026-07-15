@@ -335,8 +335,13 @@ def execute_menu(menu_path: str):
     is_flag=True,
     help="Force-clear an orphaned/stuck test job and return without starting a new run."
 )
+@click.option(
+    "--discard-untitled-scenes",
+    is_flag=True,
+    help="Discard dirty untitled scenes before running (their contents are lost)."
+)
 @handle_unity_errors
-def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, failed_only: bool, clear_stuck: bool):
+def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, failed_only: bool, clear_stuck: bool, discard_untitled_scenes: bool):
     """Run Unity tests.
 
     \b
@@ -358,6 +363,8 @@ def run_tests(mode: str, async_mode: bool, wait: Optional[int], details: bool, f
         params["include_details"] = True
     if failed_only:
         params["include_failed_tests"] = True
+    if discard_untitled_scenes:
+        params["discard_untitled_scenes"] = True
 
     result = run_command("run_tests", params, config)
 

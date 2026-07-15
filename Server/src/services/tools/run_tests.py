@@ -148,7 +148,11 @@ class GetTestJobResponse(MCPResponse):
     description=(
         "Starts a Unity test run asynchronously and returns a job_id immediately. "
         "Poll with get_test_job for progress. Pass clear_stuck=True to recover from "
-        "a stuck 'tests_running' state without starting a new run."
+        "a stuck 'tests_running' state without starting a new run. "
+        "Fails fast with error 'unsaved_untitled_scene' when a dirty untitled scene is open "
+        "(a run would block the editor on a native Save dialog); remediate by saving it via "
+        "manage_scene(action='save', name=..., path=...) or re-run with "
+        "discard_untitled_scenes=True to discard it."
     ),
     annotations=ToolAnnotations(
         title="Run Tests",
@@ -175,6 +179,11 @@ async def run_tests(
                            "Force-clear an orphaned/stuck test job and return immediately "
                            "without starting a new run. Use to recover from a stuck "
                            "'tests_running' state. When set, other filter params are ignored."] = False,
+    discard_untitled_scenes: Annotated[bool,
+                                       "Discard any dirty untitled (never-saved) scenes before running. "
+                                       "Default false: run_tests fails fast with error 'unsaved_untitled_scene' "
+                                       "instead of risking a blocking Save dialog. Set true only when the "
+                                       "untitled scene's contents are disposable."] = False,
     init_timeout: Annotated[int | None,
                             "Initialization timeout in milliseconds. PlayMode tests may need longer "
                             "due to domain reload (default: 15000). Recommended: 120000 for PlayMode."] = None,
@@ -217,6 +226,8 @@ async def run_tests(
         params["includeFailedTests"] = True
     if include_details:
         params["includeDetails"] = True
+    if discard_untitled_scenes:
+        params["discard_untitled_scenes"] = True
     if init_timeout is not None and init_timeout > 0:
         params["initTimeout"] = init_timeout
 

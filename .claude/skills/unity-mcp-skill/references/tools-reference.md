@@ -789,9 +789,16 @@ result = run_tests(
     category_names=["Unit"],     # NUnit categories
     assembly_names=["Tests"],    # assembly filter
     include_failed_tests=True,   # include failure details
-    include_details=False        # include all test details
+    include_details=False,       # include all test details
+    discard_untitled_scenes=False  # opt-in: discard dirty untitled scenes instead of failing fast
 )
 # Returns: {"job_id": "abc123", ...}
+
+# Fail-fast: if a dirty untitled (never-saved) scene is open, run_tests refuses with
+# error "unsaved_untitled_scene" (data lists the scenes) instead of letting Unity pop
+# a blocking native Save dialog. Remediate either way:
+#   manage_scene(action="save", name="MyScene", path="Assets/Scenes")  # keep the work
+#   run_tests(discard_untitled_scenes=True)                            # discard it (contents lost)
 
 # Recovery: force-clear an orphaned/stuck test job when subsequent run_tests
 # calls keep returning "tests_running" even though no test is actually running.

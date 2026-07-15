@@ -193,3 +193,71 @@ async def test_run_tests_clear_stuck_skips_preflight(monkeypatch):
     preflight_called = False
     await run_tests(DummyContext(), clear_stuck=False)
     assert preflight_called is True, "preflight must run on the normal start-tests path"
+
+
+@pytest.mark.asyncio
+async def test_run_tests_forwards_discard_untitled_scenes(monkeypatch):
+    from services.tools.run_tests import run_tests
+
+    captured = {}
+
+    async def fake_send_with_unity_instance(send_fn, unity_instance, command_type, params, **kwargs):
+        captured["params"] = params
+        return {"success": True, "data": {"job_id": "abc123", "status": "running", "mode": "EditMode"}}
+
+    import services.tools.run_tests as mod
+    monkeypatch.setattr(
+        mod.unity_transport, "send_with_unity_instance", fake_send_with_unity_instance)
+
+    resp = await run_tests(DummyContext(), mode="EditMode", discard_untitled_scenes=True)
+    assert captured["params"]["discard_untitled_scenes"] is True
+    assert resp.success is True
+
+
+@pytest.mark.asyncio
+async def test_run_tests_omits_discard_untitled_scenes_by_default(monkeypatch):
+    from services.tools.run_tests import run_tests
+
+    captured = {}
+
+    async def fake_send_with_unity_instance(send_fn, unity_instance, command_type, params, **kwargs):
+        captured["params"] = params
+        return {"success": True, "data": {"job_id": "abc123", "status": "running", "mode": "EditMode"}}
+
+    import services.tools.run_tests as mod
+    monkeypatch.setattr(
+        mod.unity_transport, "send_with_unity_instance", fake_send_with_unity_instance)
+
+    resp = await run_tests(DummyContext(), mode="EditMode")
+    assert "discard_untitled_scenes" not in captured["params"]
+    assert resp.success is True
+
+
+@pytest.mark.asyncio
+async def test_run_tests_passes_through_unsaved_untitled_scene_error(monkeypatch):
+    """The C# fail-fast refusal must reach the caller verbatim (token in error, details in data)."""
+    from models import MCPResponse
+    from services.tools.run_tests import run_tests
+
+    async def fake_send_with_unity_instance(send_fn, unity_instance, command_type, params, **kwargs):
+        return {
+            "success": False,
+            "code": "unsaved_untitled_scene",
+            "error": "unsaved_untitled_scene",
+            "data": {
+                "reason": "unsaved_untitled_scene",
+                "scenes": [{"name": "", "isActive": True, "rootCount": 2}],
+                "message": "One or more unsaved untitled scenes are open...",
+            },
+        }
+
+    import services.tools.run_tests as mod
+    monkeypatch.setattr(
+        mod.unity_transport, "send_with_unity_instance", fake_send_with_unity_instance)
+
+    resp = await run_tests(DummyContext(), mode="EditMode")
+    assert isinstance(resp, MCPResponse)
+    assert resp.success is False
+    assert resp.error == "unsaved_untitled_scene"
+    assert resp.data["reason"] == "unsaved_untitled_scene"
+    assert resp.data["scenes"][0]["isActive"] is True
