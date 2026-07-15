@@ -215,3 +215,4 @@ python3 scripts/ensure_meta.py --all --dry-run
 - Don't add error handling for scenarios that can't happen
 - Don't commit to `main` without running tests first
 - Don't add docstrings/comments to code you didn't change
+- Don't let EditMode tests start or stop the shared HTTP server; lifecycle tests must be `[Explicit, Category("server_lifecycle")]` and port-isolated

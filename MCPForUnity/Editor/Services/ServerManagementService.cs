@@ -231,10 +231,25 @@ namespace MCPForUnity.Editor.Services
 
         /// <summary>
         /// Start the local HTTP server in a separate terminal window.
-        /// Stops any existing server on the port and clears the uvx cache first.
+        /// Stops any existing server on the port first (freshness is handled by the uvx
+        /// --no-cache --refresh flags in the generated command, not a cache clear here).
+        /// No-op in batch mode unless UNITY_MCP_ALLOW_BATCH is set.
         /// </summary>
         public bool StartLocalHttpServer(bool quiet = false)
         {
+            // Ephemeral batch editors (CI legs, check-unity-versions --full, headless test runs) must
+            // never start or restart the machine-shared HTTP server: StopLocalHttpServerInternal below
+            // first terminates whatever owns the port, which would kill a developer's live server.
+            // Mirrors the batch guards in HttpAutoStartHandler and StdioBridgeHost; set
+            // UNITY_MCP_ALLOW_BATCH to opt deliberate batch automation back in (as claude-nl-suite.yml does).
+            if (ShouldSkipBatchServerStart(
+                    Application.isBatchMode,
+                    Environment.GetEnvironmentVariable("UNITY_MCP_ALLOW_BATCH")))
+            {
+                McpLog.Info("[ServerManagement] Skipping local HTTP server start in batch mode (set UNITY_MCP_ALLOW_BATCH to override).");
+                return false;
+            }
+
             /// Clean stale Python build artifacts when using a local dev server path
             AssetPathUtility.CleanLocalServerBuildArtifacts();
 
@@ -340,6 +355,13 @@ namespace MCPForUnity.Editor.Services
                 return false;
             }
         }
+
+        /// <summary>
+        /// True when a headless/batch editor must not start or restart the shared HTTP server.
+        /// Mirrors the batch guards in HttpAutoStartHandler and StdioBridgeHost.
+        /// </summary>
+        internal static bool ShouldSkipBatchServerStart(bool isBatchMode, string allowBatchEnv)
+            => isBatchMode && string.IsNullOrWhiteSpace(allowBatchEnv);
 
         /// <summary>
         /// Stop the local HTTP server by finding the process listening on the configured port

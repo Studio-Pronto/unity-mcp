@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using MCPForUnity.Editor.Services;
 using MCPForUnity.Editor.Constants;
@@ -28,6 +31,21 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         private bool _savedAllowLanHttpBind;
         private bool _savedAllowInsecureRemoteHttp;
 
+        private static readonly string[] HandshakeStringKeys =
+        {
+            EditorPrefKeys.LastLocalHttpServerStartedUtc,
+            EditorPrefKeys.LastLocalHttpServerPidArgsHash,
+            EditorPrefKeys.LastLocalHttpServerPidFilePath,
+            EditorPrefKeys.LastLocalHttpServerInstanceToken,
+        };
+        private static readonly string[] HandshakeIntKeys =
+        {
+            EditorPrefKeys.LastLocalHttpServerPid,
+            EditorPrefKeys.LastLocalHttpServerPort,
+        };
+        private readonly Dictionary<string, string> _savedHandshakeStrings = new Dictionary<string, string>();
+        private readonly Dictionary<string, int> _savedHandshakeInts = new Dictionary<string, int>();
+
         [SetUp]
         public void SetUp()
         {
@@ -39,6 +57,23 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             _savedHttpTransportScope = EditorPrefs.GetString(EditorPrefKeys.HttpTransportScope, string.Empty);
             _savedAllowLanHttpBind = EditorPrefs.GetBool(EditorPrefKeys.AllowLanHttpBind, false);
             _savedAllowInsecureRemoteHttp = EditorPrefs.GetBool(EditorPrefKeys.AllowInsecureRemoteHttp, false);
+
+            // The server handshake lives in GLOBAL EditorPrefs shared across every Unity project on
+            // this machine. Snapshot and clear it so no test in this fixture can act on the
+            // developer's real server pidfile/tracking (StopLocalHttpServerInternal deletes a
+            // handshake it considers stale, even when the test targets an isolated port).
+            _savedHandshakeStrings.Clear();
+            _savedHandshakeInts.Clear();
+            foreach (var key in HandshakeStringKeys)
+            {
+                if (EditorPrefs.HasKey(key)) _savedHandshakeStrings[key] = EditorPrefs.GetString(key);
+                EditorPrefs.DeleteKey(key);
+            }
+            foreach (var key in HandshakeIntKeys)
+            {
+                if (EditorPrefs.HasKey(key)) _savedHandshakeInts[key] = EditorPrefs.GetInt(key);
+                EditorPrefs.DeleteKey(key);
+            }
         }
 
         [TearDown]
@@ -72,6 +107,17 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             }
             EditorPrefs.SetBool(EditorPrefKeys.AllowLanHttpBind, _savedAllowLanHttpBind);
             EditorPrefs.SetBool(EditorPrefKeys.AllowInsecureRemoteHttp, _savedAllowInsecureRemoteHttp);
+            // Restore the global server handshake exactly as it was found
+            foreach (var key in HandshakeStringKeys)
+            {
+                if (_savedHandshakeStrings.TryGetValue(key, out var value)) EditorPrefs.SetString(key, value);
+                else EditorPrefs.DeleteKey(key);
+            }
+            foreach (var key in HandshakeIntKeys)
+            {
+                if (_savedHandshakeInts.TryGetValue(key, out var value)) EditorPrefs.SetInt(key, value);
+                else EditorPrefs.DeleteKey(key);
+            }
             // Refresh cache to reflect restored values
             EditorConfigurationCache.Instance.Refresh();
         }
@@ -737,9 +783,17 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         }
 
         [Test]
+        [Explicit("Starts/stops the real local HTTP server")]
+        [Category("server_lifecycle")]
         public void StartLocalHttpServerQuiet_DoesNotThrow()
         {
-            // Arrange
+            // Isolate to an OS-assigned ephemeral loopback port so a manual run never
+            // targets the shared default port (a live dev server must survive this test).
+            var portHold = new TcpListener(IPAddress.Loopback, 0);
+            portHold.Start();
+            int port = ((IPEndPoint)portHold.LocalEndpoint).Port;
+            portHold.Stop(); // free it so the launched server can bind
+            EditorPrefs.SetString(EditorPrefKeys.HttpBaseUrl, $"http://127.0.0.1:{port}");
             _service = new ServerManagementService();
 
             // Act & Assert - Should never throw or show dialogs, even when uvx is unavailable
@@ -753,7 +807,58 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             }
             finally
             {
+                try { _service.StopLocalHttpServer(); } catch { /* best-effort cleanup on the isolated port */ }
                 LogAssert.ignoreFailingMessages = false;
+            }
+        }
+
+        [TestCase(false, null, false)]
+        [TestCase(false, "1", false)]
+        [TestCase(true, null, true)]
+        [TestCase(true, "", true)]
+        [TestCase(true, "   ", true)]
+        [TestCase(true, "1", false)]
+        public void ShouldSkipBatchServerStart_TruthTable(bool batch, string env, bool expected)
+        {
+            Assert.AreEqual(expected, ServerManagementService.ShouldSkipBatchServerStart(batch, env));
+        }
+
+        [Test]
+        public void StartLocalHttpServer_InBatchWithoutOptIn_DefersAndDoesNotCommandeer()
+        {
+            bool guardActive = Application.isBatchMode
+                && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("UNITY_MCP_ALLOW_BATCH"));
+            if (!guardActive)
+            {
+                Assert.Ignore("Batch guard only active in a batch editor without UNITY_MCP_ALLOW_BATCH; "
+                            + "logic is covered by ShouldSkipBatchServerStart_TruthTable.");
+            }
+
+            // Stand in for a developer's live server on an ephemeral port; 8080 is never touched.
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+                EditorPrefs.SetString(EditorPrefKeys.HttpBaseUrl, $"http://127.0.0.1:{port}");
+                EditorPrefs.SetBool(EditorPrefKeys.UseHttpTransport, true); // absent the guard, the flow would reach the stop-existing step
+                EditorConfigurationCache.Instance.Refresh();
+                _service = new ServerManagementService();
+
+                LogAssert.Expect(LogType.Log, new Regex("batch", RegexOptions.IgnoreCase)); // the guard's Info line
+                bool result = _service.StartLocalHttpServer(quiet: true);
+
+                Assert.IsFalse(result, "Batch start without opt-in must defer.");
+                using (var probe = new TcpClient())
+                {
+                    Assert.DoesNotThrow(() => probe.Connect(IPAddress.Loopback, port),
+                        "Existing listener must survive a deferred start.");
+                }
+            }
+            finally
+            {
+                listener.Stop();
             }
         }
 

@@ -193,6 +193,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         /// </summary>
         [Test]
         [Explicit("Stops the MCP server - kills connection")]
+        [Category("server_lifecycle")]
         public void ServerManagementService_StopLocalHttpServer_PrefersPidfileBasedApproach()
         {
             var service = new ServerManagementService();
