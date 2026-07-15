@@ -185,11 +185,15 @@ namespace MCPForUnity.Editor.Helpers
             if (SetViaSerializedProperty(component, propertyName, normalizedName, value, out error))
                 return true;
 
-            // Both paths failed. If reflection found the member but couldn't convert,
-            // report that (more useful than the SerializedProperty error).
-            // If reflection didn't find it at all, report the SerializedProperty error.
-            if (reflectionError != null && !reflectionError.Contains("not found"))
+            // Both paths failed. Prefer the SerializedProperty error when that path engaged
+            // the property (e.g. precise LayerMask messages); fall back to the reflection
+            // error when the SerializedProperty lookup missed but reflection found the
+            // member and just couldn't convert the value.
+            if (error != null && error.Contains("not found")
+                && reflectionError != null && !reflectionError.Contains("not found"))
+            {
                 error = reflectionError;
+            }
 
             return false;
         }
@@ -450,13 +454,32 @@ namespace MCPForUnity.Editor.Helpers
             return null;
         }
 
+        /// <summary>
+        /// Built-in components expose C# properties (cullingMask) backed by m_PascalCase
+        /// serialized fields (m_CullingMask); FindProperty only knows the latter. The raw
+        /// name keeps its internal capitals ("cullingMask" → "m_CullingMask") while the
+        /// normalized name covers snake_case input ("culling_mask" → "cullingMask").
+        /// </summary>
+        private static SerializedProperty FindSerializedProperty(SerializedObject so, string propertyName, string normalizedName)
+        {
+            return so.FindProperty(propertyName)
+                ?? so.FindProperty(normalizedName)
+                ?? so.FindProperty(ToUnityBackingFieldName(propertyName))
+                ?? so.FindProperty(ToUnityBackingFieldName(normalizedName));
+        }
+
+        private static string ToUnityBackingFieldName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            return "m_" + char.ToUpperInvariant(name[0]) + name.Substring(1);
+        }
+
         private static bool SetViaSerializedProperty(Component component, string propertyName, string normalizedName, JToken value, out string error)
         {
             error = null;
             using var so = new SerializedObject(component);
 
-            SerializedProperty prop = so.FindProperty(propertyName)
-                                   ?? so.FindProperty(normalizedName);
+            SerializedProperty prop = FindSerializedProperty(so, propertyName, normalizedName);
             if (prop == null)
             {
                 error = $"SerializedProperty '{propertyName}' not found on component '{component.GetType().Name}'.";
@@ -474,8 +497,7 @@ namespace MCPForUnity.Editor.Helpers
                 && !(value is JValue jv && jv.Type == JTokenType.Null))
             {
                 so.Update();
-                var verifyProp = so.FindProperty(propertyName)
-                              ?? so.FindProperty(normalizedName);
+                var verifyProp = FindSerializedProperty(so, propertyName, normalizedName);
                 if (verifyProp != null
                     && verifyProp.propertyType == SerializedPropertyType.ObjectReference
                     && verifyProp.objectReferenceValue == null)

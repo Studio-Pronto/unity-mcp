@@ -2,7 +2,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
 using MCPForUnity.Editor.Tools;
-using MCPForUnity.Editor.Helpers;
+using UnityEngine.TestTools;
 
 namespace MCPForUnityTests.Editor.Tools
 {
@@ -28,6 +28,8 @@ namespace MCPForUnityTests.Editor.Tools
             }
         }
 
+        private static JObject AsJObject(object result) => result as JObject ?? JObject.FromObject(result);
+
         [Test]
         public void SetProperty_LayerMask_IntegerValue_SetsRawBitmask()
         {
@@ -40,10 +42,20 @@ namespace MCPForUnityTests.Editor.Tools
                 ["value"] = 1
             };
 
-            var result = ManageComponents.HandleCommand(setParams);
+            LogAssert.ignoreFailingMessages = true;
+            object result;
+            try
+            {
+                result = ManageComponents.HandleCommand(setParams);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOf<SuccessResponse>(result);
+            var r = AsJObject(result);
+            Assert.IsTrue(r.Value<bool>("success"), r.ToString());
             Assert.AreEqual(1, camera.cullingMask);
         }
 
@@ -59,10 +71,20 @@ namespace MCPForUnityTests.Editor.Tools
                 ["value"] = new JArray("Default")
             };
 
-            var result = ManageComponents.HandleCommand(setParams);
+            LogAssert.ignoreFailingMessages = true;
+            object result;
+            try
+            {
+                result = ManageComponents.HandleCommand(setParams);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOf<SuccessResponse>(result);
+            var r = AsJObject(result);
+            Assert.IsTrue(r.Value<bool>("success"), r.ToString());
             Assert.AreEqual(LayerMask.GetMask("Default"), camera.cullingMask);
         }
 
@@ -78,10 +100,20 @@ namespace MCPForUnityTests.Editor.Tools
                 ["value"] = "Default"
             };
 
-            var result = ManageComponents.HandleCommand(setParams);
+            LogAssert.ignoreFailingMessages = true;
+            object result;
+            try
+            {
+                result = ManageComponents.HandleCommand(setParams);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOf<SuccessResponse>(result);
+            var r = AsJObject(result);
+            Assert.IsTrue(r.Value<bool>("success"), r.ToString());
             Assert.AreEqual(LayerMask.GetMask("Default"), camera.cullingMask);
         }
 
@@ -97,12 +129,21 @@ namespace MCPForUnityTests.Editor.Tools
                 ["value"] = "NonexistentLayer123"
             };
 
-            var result = ManageComponents.HandleCommand(setParams);
+            LogAssert.ignoreFailingMessages = true;
+            object result;
+            try
+            {
+                result = ManageComponents.HandleCommand(setParams);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOf<ErrorResponse>(result);
-            var error = (ErrorResponse)result;
-            Assert.That(error.Message, Does.Contain("NonexistentLayer123"));
+            var r = AsJObject(result);
+            Assert.IsFalse(r.Value<bool>("success"), r.ToString());
+            Assert.That(r["data"]?["errors"]?.ToString(), Does.Contain("NonexistentLayer123"));
         }
 
         [Test]
@@ -117,12 +158,21 @@ namespace MCPForUnityTests.Editor.Tools
                 ["value"] = new JArray("Default", "NonexistentLayer123")
             };
 
-            var result = ManageComponents.HandleCommand(setParams);
+            LogAssert.ignoreFailingMessages = true;
+            object result;
+            try
+            {
+                result = ManageComponents.HandleCommand(setParams);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOf<ErrorResponse>(result);
-            var error = (ErrorResponse)result;
-            Assert.That(error.Message, Does.Contain("NonexistentLayer123"));
+            var r = AsJObject(result);
+            Assert.IsFalse(r.Value<bool>("success"), r.ToString());
+            Assert.That(r["data"]?["errors"]?.ToString(), Does.Contain("NonexistentLayer123"));
         }
     }
 }
