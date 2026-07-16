@@ -1,0 +1,6 @@
+﻿<Solution>
+  <Project Path="MCPForUnity.Runtime.csproj" />
+  <Project Path="TestAsmdef.csproj" />
+  <Project Path="MCPForUnity.Editor.csproj" />
+  <Project Path="MCPForUnityTests.EditMode.csproj" />
+</Solution>

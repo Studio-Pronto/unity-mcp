@@ -26,6 +26,7 @@ TOOL_GROUPS: dict[str, str] = {
     "probuilder": "ProBuilder 3D modeling – requires com.unity.probuilder package",
     "auditor": "Project Auditor static analysis – code, assets, shaders, settings (Unity 6.4+)",
     "profiling": "Unity Profiler session control, counters, memory snapshots & Frame Debugger",
+    "asset_gen": "AI asset generation – 3D model gen/import, 2D image gen & audio gen (bring-your-own-key)",
 }
 
 DEFAULT_ENABLED_GROUPS: set[str] = {"core"}

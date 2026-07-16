@@ -37,7 +37,7 @@ MCP tools call Unity via WebSocket (`send_with_unity_instance`). CLI commands ca
 ### Transport Modes
 
 - **Stdio**: Single-agent only. Separate Python process per client. Legacy TCP bridge to Unity. New connections stomp old ones.
-- **HTTP**: Multi-agent ready. Single shared Python server. WebSocket hub at `/hub/plugin`. Per-session instance routing via `session_id` (fallback chain: `client_id` > `session_id` > `user_id` > `"global"`). Auto-matches Unity instances to Claude sessions by comparing `list_roots()` against Unity project paths.
+- **HTTP**: Multi-agent ready. Single shared Python server. WebSocket hub at `/hub/plugin`. Per-session instance routing is held in FastMCP's session-scoped state (key `mcpforunity.active_instance`), which keys off `ctx.session_id` — the `Mcp-Session-Id` header on HTTP, a per-subprocess UUID on stdio — so two MCP sessions can never share a selection (#1023). Auto-matches Unity instances to Claude sessions by comparing `list_roots()` against Unity project paths.
 
 ## Code Philosophy
 
@@ -166,6 +166,17 @@ cd Server && uv run pytest tests/ -k "test_create_material" -v
 tools/check-unity-versions.sh           # compile-only across installed Unity Hub editors
 tools/check-unity-versions.sh --full    # full EditMode test run
 ```
+
+#### Local headless test harness
+One command boots a headless Hub-licensed Editor against `TestProjects/UnityMCPTests` and runs the smoke + EditMode + PlayMode legs over the bridge — the same entrypoint CI uses (`.github/workflows/e2e-bridge.yml`):
+
+```bash
+python tools/local_harness.py
+```
+
+Key flags: `--legs smoke,editmode,playmode` (subset to run), `--project-path` (target project, default `TestProjects/UnityMCPTests`), `--reuse` (attach to an already-resident bridge instead of booting one), `--keep-alive` (leave the Editor running after the legs), `--no-warmup` (skip the warm-up import phase).
+
+Exit codes: `0` pass, `1` blocking-leg regression, `2` bridge unreachable / setup failure, `3` project does not compile, `4` no Unity license / Hub seat, `5` Editor binary/version not found. Requires a Hub-activated Editor locally (no ULF/serial).
 
 ### How Unity Projects Consume This Package
 Unity projects reference this repo via **git URL** in their `manifest.json` (Unity Package Manager). The Python server is installed via `uvx` from the package. This means **changes to Server/ or MCPForUnity/ must be pushed to the remote** before they take effect in consuming Unity projects. After pushing, update the package in Unity's Package Manager and restart the MCP server.
