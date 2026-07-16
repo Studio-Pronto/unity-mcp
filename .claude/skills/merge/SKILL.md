@@ -1,6 +1,6 @@
 ---
 name: merge
-description: Merge upstream changes into the fork. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, and applies fork fixups.
+description: Merge upstream changes into the fork. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, audits the fork delta for dropped edits, gates on Python tests, and applies fork fixups.
 ---
 
 # Merge Upstream into Fork
@@ -158,7 +158,13 @@ Lay out the findings as:
 
 **Stop and wait for the user to approve before proceeding.** The user may want to discuss specific changes, defer the merge, or make decisions on the redundancy questions.
 
-### 5. Run the merge (no auto-commit)
+### 5. Snapshot the fork delta, then run the merge (no auto-commit)
+
+Save the fork's full divergence from upstream **before** merging. This file is the ground truth the step-8 audit checks against — without it, "did we drop a fork edit?" can only be answered from memory:
+
+```bash
+git diff upstream/main...main > .git/fork-delta-pre-merge.diff
+```
 
 ```bash
 git merge upstream/main --no-commit --no-ff
@@ -224,7 +230,26 @@ For each fork-specific feature touched by the merge (animation tools, read-only 
 - Re-run any quick syntactic check available (`python3 -c "import ast; ast.parse(open('<path>').read())"` for Python; for C#, eyeball the brace/namespace closure).
 - If the merge dropped a fork-only test or assertion as part of resolving a conflict, surface it as an intentional decision in the report.
 
-Write up the findings: what each conflict was, how it was resolved (and why), what rerere did, what behavioral checks passed. Include unified diffs of any subtle code resolutions so the user can audit them.
+#### 8a. Fork-delta audit (dropped-edit check)
+
+Post-merge, the fork's remaining delta for a file is `git diff upstream/main -- <path>` (working tree vs upstream). For every file that was conflicted (`--diff-filter=U`), rerere-touched (`git rerere status`), or flagged as overlap in step 4b, compare that against the same file's section in `.git/fork-delta-pre-merge.diff`.
+
+Line numbers and context lines will have shifted — that churn is expected; read through it. What you are looking for: fork content lines (`+` lines in the pre-merge snapshot) that no longer appear in the post-merge delta. Every disappearance must be one of:
+
+- **Upstream adopted an equivalent change** — point to the upstream commit that carries it.
+- **A deliberate drop the user approved in step 4f** — cite the decision.
+
+Anything else is a dropped fork edit: restore it before proceeding. This is a review aid with ground truth in hand, not a mechanical pass/fail — the noise is yours to filter, the snapshot is what keeps you honest.
+
+#### 8b. Python test gate
+
+```bash
+cd Server && uv run pytest tests/ -q
+```
+
+Must pass before presenting the merge for approval in step 9. Failures here are merge regressions until proven otherwise — fix them as part of the merge, don't defer them. (Unity EditMode tests can't run headlessly here; they stay in the step-12 reminder.)
+
+Write up the findings: what each conflict was, how it was resolved (and why), what rerere did, what behavioral checks passed, and the audit result — files checked, every disappeared fork hunk with its explanation. Include unified diffs of any subtle code resolutions so the user can audit them.
 
 ### 9. Review with the user before committing
 
@@ -238,6 +263,8 @@ Present:
 - Every file rerere auto-resolved, with a confirmation that the cached resolution was reviewed and is still correct
 - Every file deleted (configurators, etc.) with the policy reason
 - Every fork-specific code path the merge touched, and the behavioral verification you did
+- The fork-delta audit result (8a): files checked, every disappeared fork hunk and its explanation
+- Confirmation the Python test gate (8b) passed
 - Any decisions you flagged for the user in step 7
 
 **Wait for the user to approve before committing.** If they want changes, make them and re-present the relevant section.
@@ -276,4 +303,4 @@ Summarize:
 - rerere replay summary: files auto-resolved, files where the cache was stale and you re-resolved
 - Silent-breakage findings (renames, removed APIs) and how they were handled
 - The new fork version
-- Remind: "Run tests before pushing. Python: `cd Server && uv run pytest tests/ -v`. Unity tests require opening TestProjects/UnityMCPTests in Unity Editor."
+- Remind: "Python tests already passed in step 8b. Unity tests still need to run before pushing — open TestProjects/UnityMCPTests in Unity Editor and use the Test Runner."
