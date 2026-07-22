@@ -33,9 +33,11 @@ if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
     exit 1
 fi
 
+# PRs-only: the fork never commits to 'main' directly. /merge runs this on a
+# 'sync/upstream-*' branch and lands it via a PR (/land). Accept either.
 CURRENT_BRANCH="$(git -C "$REPO_ROOT" branch --show-current)"
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
-    echo "Error: expected to be on 'main', currently on '$CURRENT_BRANCH'."
+if [[ "$CURRENT_BRANCH" != "main" && "$CURRENT_BRANCH" != sync/upstream-* ]]; then
+    echo "Error: expected to be on 'main' or a 'sync/upstream-*' branch, currently on '$CURRENT_BRANCH'."
     exit 1
 fi
 
