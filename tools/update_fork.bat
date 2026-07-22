@@ -27,9 +27,12 @@ for /f "delims=" %%i in ('git -C "%REPO_ROOT%" status --porcelain') do (
     exit /b 1
 )
 
+:: PRs-only: the fork never commits to 'main' directly. /merge runs this on a
+:: 'sync/upstream-*' branch and lands it via a PR (/land). Accept either.
 for /f "delims=" %%i in ('git -C "%REPO_ROOT%" branch --show-current') do set "CURRENT_BRANCH=%%i"
-if not "%CURRENT_BRANCH%"=="main" (
-    echo Error: expected to be on 'main', currently on '%CURRENT_BRANCH%'.
+set "BRANCH_PREFIX=%CURRENT_BRANCH:~0,14%"
+if not "%CURRENT_BRANCH%"=="main" if not "%BRANCH_PREFIX%"=="sync/upstream-" (
+    echo Error: expected to be on 'main' or a 'sync/upstream-*' branch, currently on '%CURRENT_BRANCH%'.
     exit /b 1
 )
 

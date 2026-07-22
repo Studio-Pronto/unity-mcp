@@ -1,6 +1,6 @@
 ---
 name: merge
-description: Merge upstream changes into the fork. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, audits the fork delta for dropped edits, gates on Python tests, and applies fork fixups.
+description: Merge upstream changes into the fork on a sync branch. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, audits the fork delta for dropped edits, gates on Python tests, applies fork fixups, then lands the sync branch via a PR (/land) — never a direct push to main.
 ---
 
 # Merge Upstream into Fork
@@ -17,16 +17,17 @@ Bash, Read, Edit, Glob, Grep
 
 ### 1. Pre-flight checks
 
-Run these checks and **stop with a clear message** if any fail:
+The fork is **PRs-only** — nothing commits to `main` directly. This skill does the entire merge on a `sync/upstream-*` branch (cut in step 3) and lands it via a PR (`/land`), never a direct push. Run these checks and **stop with a clear message** if any fail:
 
 ```bash
 git status --porcelain          # must be empty (clean working tree)
-git branch --show-current       # must be "main"
 git config --get rerere.enabled # should be "true" — see step 2 if not
+git fetch origin && git fetch upstream
 ```
 
 - If working tree is dirty: "You have uncommitted changes. Commit or stash them first, then re-run `/merge`."
-- If not on main: "You're on branch `X`. Switch to `main` first."
+
+You can be on any branch — the sync branch is cut from fresh `origin/main`, so there's no "switch to main" step.
 
 ### 2. Confirm rerere is on (and surface what it remembers)
 
@@ -48,14 +49,22 @@ If rerere is not enabled, **stop and tell the user**:
 
 **Important:** rerere replays resolutions blindly based on conflict hunk hash. A cached resolution can become *stale* if either side's surrounding code has evolved — the replayed fix may compile but silently drop new behavior. In step 5 you must re-read every file rerere touched, not trust the cache.
 
-### 3. Check if there's anything to merge
+### 3. Check if there's anything to merge, then cut the sync branch
 
 ```bash
-git fetch upstream
-git log --oneline HEAD..upstream/main
+git log --oneline origin/main..upstream/main
 ```
 
 If empty, report "Already up to date with upstream/main" and stop.
+
+Otherwise capture the upstream version and cut the sync branch off fresh `origin/main`:
+
+```bash
+UPSTREAM_VERSION=$(git show upstream/main:MCPForUnity/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+git switch --no-track -c "sync/upstream-v${UPSTREAM_VERSION}" origin/main
+```
+
+If that branch already exists (a resumed merge), `git switch` to it instead of recreating it. Everything from here runs on the sync branch — the `sync/upstream-*` prefix is what tells `/land` to land it with `--merge` (preserving the upstream merge-base) instead of squashing.
 
 ### 4. Deep pre-merge analysis
 
@@ -160,20 +169,17 @@ Lay out the findings as:
 
 ### 5. Snapshot the fork delta, then run the merge (no auto-commit)
 
-Save the fork's full divergence from upstream **before** merging. This file is the ground truth the step-8 audit checks against — without it, "did we drop a fork edit?" can only be answered from memory:
+Save the fork's full divergence from upstream **before** merging. This file is the ground truth the step-8 audit checks against — without it, "did we drop a fork edit?" can only be answered from memory (`HEAD` is the sync branch, still at `origin/main` until the merge below):
 
 ```bash
-git diff upstream/main...main > .git/fork-delta-pre-merge.diff
+git diff upstream/main...HEAD > .git/fork-delta-pre-merge.diff
 ```
 
 ```bash
 git merge upstream/main --no-commit --no-ff
 ```
 
-Capture the upstream version for the commit message:
-```bash
-UPSTREAM_VERSION=$(git show upstream/main:MCPForUnity/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
-```
+(`UPSTREAM_VERSION` was captured in step 3 — used for the sync branch name and the step-9 commit message.)
 
 ### 6. Identify what rerere already resolved
 
@@ -303,4 +309,4 @@ Summarize:
 - rerere replay summary: files auto-resolved, files where the cache was stale and you re-resolved
 - Silent-breakage findings (renames, removed APIs) and how they were handled
 - The new fork version
-- Remind: "Python tests already passed in step 8b. Unity tests still need to run before pushing — open TestProjects/UnityMCPTests in Unity Editor and use the Test Runner."
+- **Land it:** you're on `sync/upstream-v<version>`. Run **`/land`** — it pushes the branch, opens the PR, runs the local gate (Python via `pytest`, Unity via `tools/local_harness.py`), and merges with **`--merge`** to preserve the upstream merge-base. **Never squash an upstream sync** — squashing collapses the merge commit and makes every future `/merge` re-conflict. (Python tests already passed in step 8b; `/land`'s C# gate covers the Unity legs.)

@@ -179,7 +179,7 @@ Key flags: `--legs smoke,editmode,playmode` (subset to run), `--project-path` (t
 Exit codes: `0` pass, `1` blocking-leg regression, `2` bridge unreachable / setup failure, `3` project does not compile, `4` no Unity license / Hub seat, `5` Editor binary/version not found. Requires a Hub-activated Editor locally (no ULF/serial).
 
 ### How Unity Projects Consume This Package
-Unity projects reference this repo via **git URL** in their `manifest.json` (Unity Package Manager). The Python server is installed via `uvx` from the package. This means **changes to Server/ or MCPForUnity/ must be pushed to the remote** before they take effect in consuming Unity projects. After pushing, update the package in Unity's Package Manager and restart the MCP server.
+Unity projects reference this repo via **git URL** in their `manifest.json` (Unity Package Manager). The Python server is installed via `uvx` from the package. This means **changes to Server/ or MCPForUnity/ must be landed on `main`** — the fork is PRs-only, so land via a PR with the `/land` skill — before they take effect in consuming Unity projects. After the PR merges, update the package in Unity's Package Manager and restart the MCP server.
 
 ### Local Development
 1. Set **Server Source Override** in MCP for Unity Advanced Settings to your local `Server/` path
@@ -201,7 +201,7 @@ Every file and folder under `MCPForUnity/` needs a companion `.meta` file or Uni
 
 1. **Claude Code hook** — auto-generates `.meta` when you write files under `MCPForUnity/`
 2. **Git pre-commit hook** — catches any missing `.meta` at commit time and auto-stages them
-3. **CI check** — validates `.meta` pairing on push/PR
+3. **CI check** — the `check-meta` workflow validates `.meta` pairing on push/PR (currently disabled on this fork, which tests locally — the git pre-commit hook above is the active enforcement)
 
 **Setup (one time per clone):**
 ```bash
@@ -224,6 +224,6 @@ python3 scripts/ensure_meta.py --all --dry-run
 - Don't add features without tests
 - Don't create helper functions for one-time operations
 - Don't add error handling for scenarios that can't happen
-- Don't commit to `main` without running tests first
+- Don't commit or push to `main` directly — the fork is PRs-only; land via a PR (`/land`), which runs the local test gate first
 - Don't add docstrings/comments to code you didn't change
 - Don't let EditMode tests start or stop the shared HTTP server; lifecycle tests must be `[Explicit, Category("server_lifecycle")]` and port-isolated
