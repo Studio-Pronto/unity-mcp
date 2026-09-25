@@ -373,7 +373,7 @@ namespace MCPForUnity.Editor.Services
                         : (extraPathPrepend + Path.PathSeparator + currentPath);
                 }
 
-                _lastLaunchedProcess = System.Diagnostics.Process.Start(startInfo);
+                _lastLaunchedProcess = ServerProcessLauncher.Start(startInfo);
                 if (!string.IsNullOrEmpty(pidFilePath))
                 {
                     StoreLocalHttpServerHandshake(pidFilePath, instanceToken);
