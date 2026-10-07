@@ -368,9 +368,9 @@ namespace MCPForUnity.Editor.Services
                 if (!string.IsNullOrEmpty(extraPathPrepend))
                 {
                     string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-                    startInfo.EnvironmentVariables["PATH"] = string.IsNullOrEmpty(currentPath)
+                    ExecPath.SetPathVariable(startInfo, string.IsNullOrEmpty(currentPath)
                         ? extraPathPrepend
-                        : (extraPathPrepend + Path.PathSeparator + currentPath);
+                        : (extraPathPrepend + Path.PathSeparator + currentPath));
                 }
 
                 _lastLaunchedProcess = ServerProcessLauncher.Start(startInfo);
