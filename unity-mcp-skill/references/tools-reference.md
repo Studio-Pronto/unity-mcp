@@ -808,6 +808,9 @@ result = run_tests(
 # calls keep returning "tests_running" even though no test is actually running.
 run_tests(clear_stuck=True)
 # Returns: {"cleared": true|false} — "Stuck job cleared." or "No running job to clear."
+# If the next job then fails with "A recovered Unity test run is still in progress",
+# a run that survived a domain reload still owns the test runner: wait for it to
+# finish, or force a reload (execute_code: EditorUtility.RequestScriptReload()) and retry.
 ```
 
 ### get_test_job
