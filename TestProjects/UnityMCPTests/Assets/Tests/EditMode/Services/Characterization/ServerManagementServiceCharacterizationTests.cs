@@ -160,6 +160,10 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             public bool HeadlessCalled;
             public string LastCommand;
             public string LastLogPath;
+            public System.Diagnostics.ProcessStartInfo LastHeadlessStartInfo;
+
+            // Spell the inherited PATH entry "Path", as Windows hands it to the editor.
+            public bool InheritWindowsPathSpelling;
 
             public System.Diagnostics.ProcessStartInfo CreateTerminalProcessStartInfo(string command)
             {
@@ -171,7 +175,15 @@ namespace MCPForUnityTests.Editor.Services.Characterization
                 HeadlessCalled = true;
                 LastCommand = command;
                 LastLogPath = logFilePath;
-                return HarmlessNoOpStartInfo();
+                LastHeadlessStartInfo = HarmlessNoOpStartInfo();
+                if (InheritWindowsPathSpelling)
+                {
+                    var env = LastHeadlessStartInfo.EnvironmentVariables;
+                    string inherited = env["PATH"] ?? string.Empty;
+                    env.Remove("PATH");
+                    env["Path"] = inherited;
+                }
+                return LastHeadlessStartInfo;
             }
 
             public string GetProjectRootPath()
@@ -204,6 +216,8 @@ namespace MCPForUnityTests.Editor.Services.Characterization
         // does not bail out before reaching the confirmation gate.
         private sealed class FakeCommandBuilder : IServerCommandBuilder
         {
+            public string PathPrepend = string.Empty;
+
             public bool TryBuildCommand(out string fileName, out string arguments, out string displayCommand, out string error)
             {
                 fileName = "uvx";
@@ -214,7 +228,7 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             }
 
             public string BuildUvPathFromUvx(string uvxPath) => uvxPath;
-            public string GetPlatformSpecificPathPrepend() => string.Empty;
+            public string GetPlatformSpecificPathPrepend() => PathPrepend;
             public string QuoteIfNeeded(string input) =>
                 (!string.IsNullOrEmpty(input) && input.Contains(" ")) ? "\"" + input + "\"" : input;
         }
@@ -230,13 +244,14 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             public string NormalizeForMatch(string input) => (input ?? string.Empty).Replace(" ", string.Empty).ToLowerInvariant();
         }
 
-        private ServerManagementService BuildServiceWithFakeLauncher(RecordingTerminalLauncher launcher)
+        private ServerManagementService BuildServiceWithFakeLauncher(
+            RecordingTerminalLauncher launcher, FakeCommandBuilder commandBuilder = null)
         {
             return new ServerManagementService(
                 new NoListenersProcessDetector(),
                 null,
                 null,
-                new FakeCommandBuilder(),
+                commandBuilder ?? new FakeCommandBuilder(),
                 launcher);
         }
 
@@ -326,6 +341,39 @@ namespace MCPForUnityTests.Editor.Services.Characterization
             Assert.IsTrue(launcher.HeadlessCalled, "Launch should reach the headless launcher");
             StringAssert.Contains("server-launch-59996.log", launcher.LastLogPath,
                 "Headless launch should redirect output to the per-port launch log");
+        }
+
+        [Test]
+        public void StartLocalHttpServer_PathPrepend_WritesThroughTheInheritedPathEntry()
+        {
+            // Mono's EnvironmentVariables is case-sensitive and Windows spells the inherited entry
+            // "Path", so writing "PATH" added a second entry the server never read (#52).
+            EditorPrefs.SetString(EditorPrefKeys.HttpBaseUrl, "http://localhost:59995");
+            EditorPrefs.SetBool(EditorPrefKeys.HttpServerLaunchConfirmed, true);
+            EditorConfigurationCache.Instance.Refresh();
+
+            const string prepend = "/mcp-path-prepend-probe";
+            var launcher = new RecordingTerminalLauncher { InheritWindowsPathSpelling = true };
+            var service = BuildServiceWithFakeLauncher(launcher, new FakeCommandBuilder { PathPrepend = prepend });
+
+            using var allowBatch = new BatchServerStartOverride();
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                service.StartLocalHttpServer(quiet: true);
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+
+            Assert.IsTrue(launcher.HeadlessCalled, "Launch should reach the headless launcher");
+            var env = launcher.LastHeadlessStartInfo.EnvironmentVariables;
+            var pathKeys = env.Keys.Cast<string>()
+                .Where(key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            Assert.AreEqual(1, pathKeys.Count, $"Expected a single PATH entry, got: {string.Join(", ", pathKeys)}");
+            StringAssert.StartsWith(prepend + System.IO.Path.PathSeparator, env[pathKeys[0]]);
         }
 
         #endregion
