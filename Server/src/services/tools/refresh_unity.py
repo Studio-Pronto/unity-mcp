@@ -265,4 +265,14 @@ async def refresh_unity(
             data={"recovered_from_disconnect": True},
         )
 
+    # On Unity 6 the plugin answers a compile request once the compile starts (its own wait
+    # cannot span the domain reload), so its resulting_state and hint describe the editor
+    # mid-compile. The wait above has since confirmed readiness, so report that (#45).
+    data = response_dict.get("data")
+    if ready_confirmed and isinstance(data, dict):
+        return MCPResponse(**{
+            **response_dict,
+            "data": {**data, "resulting_state": "idle", "hint": "Unity refresh completed; editor should be ready."},
+        })
+
     return MCPResponse(**response_dict) if isinstance(response, dict) else response
