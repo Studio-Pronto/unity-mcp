@@ -15,8 +15,6 @@ namespace MCPForUnityTests.Editor.Tools
     /// These tests trigger script compilation which can cause test timing issues when Unity is
     /// backgrounded, but the MCP workflow itself is unaffected - socket messages provide external
     /// stimulus that keeps Unity responsive.
-    ///
-    /// Note: Focus nudge improvements (P2-9) should help with background test reliability.
     /// </summary>
     [Category("domain_reload")]
     [Explicit("Domain reload stress tests; run manually when needed.")]
