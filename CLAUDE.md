@@ -73,7 +73,7 @@ from services.registry import mcp_for_unity_tool
 
 @mcp_for_unity_tool(
     description="Does something in Unity.",
-    group="core",  # core (default), vfx, animation, ui, scripting_ext, testing, probuilder, profiling, auditor, docs
+    group="core",  # core (default), vfx, animation, ui, scripting_ext, testing, probuilder, profiling, auditor, docs, asset_gen
 )
 async def manage_something(
     ctx: Context,
@@ -81,7 +81,7 @@ async def manage_something(
 ) -> dict[str, Any]:
     unity_instance = await get_unity_instance_from_context(ctx)
     params = {"action": action}
-    response = await send_with_unity_instance(async_send_command_with_retry, unity_instance, "manage_something", params)
+    response = await send_with_unity_instance(unity_instance, "manage_something", params)
     return response
 ```
 

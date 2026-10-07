@@ -848,15 +848,23 @@ namespace MCPForUnity.Editor.Helpers
             typeof(LayerMask), typeof(AnimationCurve)
         };
 
+        // Only its CanConvert is used here; values go through the instance in _outputSerializerSettings.
+        private static readonly UnityMathematicsConverter _mathematicsTypes = new UnityMathematicsConverter();
+
         private static bool IsSafeType(Type type)
         {
             if (type == null) return false;
             if (type.IsEnum) return true;
             if (type.IsPrimitive) return true;
             if (_safeTypes.Contains(type)) return true;
-            // Allow arrays/lists of safe primitive types only
+            // Allow arrays of safe primitive types
             if (type.IsArray && type.GetElementType().IsPrimitive) return true;
-            return false;
+            // Unity.Mathematics structs, and arrays/lists of them, serialize as their fields through
+            // UnityMathematicsConverter rather than by walking their swizzle properties (#1415).
+            Type element = type.IsArray ? type.GetElementType()
+                : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) ? type.GetGenericArguments()[0]
+                : type;
+            return _mathematicsTypes.CanConvert(element);
         }
 
         /// <summary>
@@ -1093,6 +1101,8 @@ namespace MCPForUnity.Editor.Helpers
                 new ColorConverter(),
                 new RectConverter(),
                 new BoundsConverter(),
+                new Matrix4x4Converter(), // Fix #478: Safe Matrix4x4 serialization for Cinemachine
+                new UnityMathematicsConverter(), // Fix #1415: float3/quaternion swizzle properties made the default walk never finish
                 new UnityEngineObjectConverter() // Handles serialization of references
             },
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
