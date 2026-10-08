@@ -85,14 +85,35 @@ namespace MCPForUnity.Editor.Services
 
         private static void RestoreRunningJobCallbacks()
         {
-            TestJob job;
+            // The Test Runner resumes an in-flight run after a reload. It belongs to the job recorded
+            // when the run started, which is not necessarily the current job.
+            bool hasOwner = TestRunnerService.TryLoadRunOwner(out string ownerJobId, out string ownerMode);
+            bool failedJob = false;
             lock (LockObj)
             {
-                if (string.IsNullOrEmpty(_currentJobId) ||
-                    !Jobs.TryGetValue(_currentJobId, out job) || job.Status != TestJobStatus.Running)
+                if (!string.IsNullOrEmpty(_currentJobId) && _currentJobId != ownerJobId &&
+                    Jobs.TryGetValue(_currentJobId, out var job) && job.Status == TestJobStatus.Running)
                 {
-                    return;
+                    // Its run never started: the request was still waiting for an earlier run and
+                    // died with the previous domain. Fail it now instead of at the init timeout.
+                    long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    job.Status = TestJobStatus.Failed;
+                    job.Error = "Test job was interrupted by a domain reload before its run started. Re-run the tests.";
+                    job.FinishedUnixMs = now;
+                    job.LastUpdateUnixMs = now;
+                    _currentJobId = null;
+                    failedJob = true;
                 }
+            }
+
+            if (failedJob)
+            {
+                PersistToSessionState(force: true);
+            }
+
+            if (!hasOwner)
+            {
+                return;
             }
 
             try
@@ -101,7 +122,7 @@ namespace MCPForUnity.Editor.Services
                 // Re-register callbacks now, before the Test Runner resumes after reload.
                 if (MCPServiceLocator.Tests is TestRunnerService service)
                 {
-                    service.ResumeJobAfterReload(job.JobId, job.Mode);
+                    service.ResumeJobAfterReload(ownerJobId, ownerMode);
                 }
             }
             catch (Exception ex)
@@ -164,6 +185,9 @@ namespace MCPForUnity.Editor.Services
                     TestRunStatus.MarkFinished();
                 }
             }
+            // Only the in-memory ownership stays: forgetting the recorded owner lets the next reload
+            // release a run the Test Runner lost without reporting back.
+            TestRunnerService.ClearRunOwner();
             PersistToSessionState(force: true);
             return cleared;
         }

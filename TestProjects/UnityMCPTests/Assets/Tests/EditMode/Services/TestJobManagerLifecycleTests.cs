@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using MCPForUnity.Editor.Services;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -28,6 +29,7 @@ namespace MCPForUnityTests.Editor.Services
         private const string JobsKey = "MCPForUnity.TestJobsV1";
         private const string CurrentKey = "MCPForUnity.CurrentTestJobIdV1";
         private const string GuardPrefix = "MCPForUnity.PlayModeOptions.";
+        private const string OwnerPrefix = "MCPForUnity.TestRunOwner.";
         private const string MarkerPath = "Library/MCPPlayModeOptionsBackup.txt";
         private Dictionary<string, TestJob> _jobs;
         private Dictionary<string, TestJob> _originalJobs;
@@ -42,6 +44,8 @@ namespace MCPForUnityTests.Editor.Services
         private bool _guardPending;
         private bool _guardEnabled;
         private int _guardOptions;
+        private string _ownerJobId;
+        private string _ownerMode;
         private byte[] _marker;
 
         private static FieldInfo ManagerField(string name) => typeof(TestJobManager).GetField(name, PrivateStatic);
@@ -66,12 +70,17 @@ namespace MCPForUnityTests.Editor.Services
             _guardPending = SessionState.GetBool(GuardPrefix + "PendingRestore", false);
             _guardEnabled = SessionState.GetBool(GuardPrefix + "OriginalEnabled", false);
             _guardOptions = SessionState.GetInt(GuardPrefix + "OriginalOptions", 0);
+            // This suite usually runs inside an MCP-started run, whose owner must survive it.
+            _ownerJobId = SessionState.GetString(OwnerPrefix + "JobId", string.Empty);
+            _ownerMode = SessionState.GetString(OwnerPrefix + "Mode", string.Empty);
             _marker = File.Exists(MarkerPath) ? File.ReadAllBytes(MarkerPath) : null;
             _jobs.Clear();
             ManagerField("_currentJobId").SetValue(null, null);
             ServiceField.SetValue(null, null);
             TestRunStatus.MarkFinished();
             PlayModeOptionsGuard.Clear();
+            SessionState.SetString(OwnerPrefix + "JobId", string.Empty);
+            SessionState.SetString(OwnerPrefix + "Mode", string.Empty);
         }
 
         [TearDown]
@@ -92,6 +101,8 @@ namespace MCPForUnityTests.Editor.Services
             SessionState.SetBool(GuardPrefix + "PendingRestore", _guardPending);
             SessionState.SetBool(GuardPrefix + "OriginalEnabled", _guardEnabled);
             SessionState.SetInt(GuardPrefix + "OriginalOptions", _guardOptions);
+            SessionState.SetString(OwnerPrefix + "JobId", _ownerJobId);
+            SessionState.SetString(OwnerPrefix + "Mode", _ownerMode);
             if (_marker == null)
             {
                 if (File.Exists(MarkerPath)) File.Delete(MarkerPath);
@@ -113,10 +124,36 @@ namespace MCPForUnityTests.Editor.Services
             return job;
         }
 
-        private TestRunnerService RestoreCallbacks()
+        // Simulates a reload: the recorded run owner (by default the current job's own run) survives it.
+        private TestRunnerService RestoreCallbacks(string owner = null, string mode = "EditMode")
         {
+            SessionState.SetString(OwnerPrefix + "JobId", owner ?? TestJobManager.CurrentJobId ?? string.Empty);
+            SessionState.SetString(OwnerPrefix + "Mode", mode);
             InvokeManager("RestoreRunningJobCallbacks");
             return ServiceField.GetValue(null) as TestRunnerService;
+        }
+
+        // Replaces only this API instance's scheduler, so no nested test run starts.
+        private static List<ExecutionSettings> StubScheduler(TestRunnerService service)
+        {
+            var api = typeof(TestRunnerService).GetField("_testRunnerApi", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
+            var scheduler = typeof(TestRunnerApi).GetField("ScheduleJob", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(scheduler);
+            var scheduled = new List<ExecutionSettings>();
+            scheduler.SetValue(api, new Func<ExecutionSettings, string>(settings =>
+            {
+                scheduled.Add(settings);
+                return "synthetic-run-" + scheduled.Count;
+            }));
+            return scheduled;
+        }
+
+        // The real init-timeout path: polling a job whose run never started past its timeout fails it.
+        private void AutoFail(string jobId)
+        {
+            _jobs[jobId].StartedUnixMs -= 60_000;
+            TestJobManager.GetJob(jobId);
+            Assert.AreEqual(TestJobStatus.Failed, _jobs[jobId].Status);
         }
 
         [Test]
@@ -229,18 +266,22 @@ namespace MCPForUnityTests.Editor.Services
             Assert.IsTrue(TestJobManager.ClearStuckJob());
             Assert.AreEqual(TestJobStatus.Failed, job.Status);
             Assert.IsFalse(TestRunStatus.IsRunning, "clear_stuck must always release the busy flag.");
+            Assert.AreEqual(string.Empty, SessionState.GetString(OwnerPrefix + "JobId", "missing"),
+                "clear_stuck must let the next reload forget the run, in case Unity lost it.");
 
-            // Stub only this API instance's scheduler: a regression must fail here, not start a nested run.
-            var api = typeof(TestRunnerService).GetField("_testRunnerApi", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
-            bool scheduled = false;
-            typeof(TestRunnerApi).GetField("ScheduleJob", BindingFlags.Instance | BindingFlags.NonPublic)
-                .SetValue(api, new Func<ExecutionSettings, string>(_ => { scheduled = true; return "synthetic-run"; }));
+            // A regression must fail here, not start a nested run.
+            var scheduled = StubScheduler(service);
             var pending = service.RunTestsAsync(TestMode.EditMode);
 
             Assert.IsTrue(pending.IsFaulted, "A new run must not consume the recovered run's callbacks.");
             Assert.IsInstanceOf<InvalidOperationException>(pending.Exception.GetBaseException());
-            Assert.IsFalse(scheduled);
+            Assert.IsEmpty(scheduled);
             Assert.IsFalse(TestRunStatus.IsRunning);
+
+            service.Dispose();
+            ServiceField.SetValue(null, null);
+            InvokeManager("RestoreRunningJobCallbacks");
+            Assert.IsNull(ServiceField.GetValue(null), "The next reload must not track the abandoned run again.");
         }
 
         [Test]
@@ -276,16 +317,10 @@ namespace MCPForUnityTests.Editor.Services
             if (error) service.OnError("Old initialization failed");
             else service.RunFinished(ResultStub.Suite(new ResultStub("Old.Pass", "Passed")));
 
-            // Replace only this API instance's scheduler so this does not execute a nested
-            // test run. The project pins Test Framework 1.1.33, which exposes this test seam.
-            var api = typeof(TestRunnerService).GetField("_testRunnerApi", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
-            var scheduler = typeof(TestRunnerApi).GetField("ScheduleJob", BindingFlags.Instance | BindingFlags.NonPublic);
-            Assert.NotNull(scheduler);
-            bool scheduled = false;
-            scheduler.SetValue(api, new Func<ExecutionSettings, string>(_ => { scheduled = true; return "synthetic-run"; }));
+            var scheduled = StubScheduler(service);
             var nextJob = AddJob("next-job");
             var pending = service.RunTestsAsync(TestMode.EditMode);
-            Assert.IsTrue(scheduled, "Terminal callbacks must release recovered ownership.");
+            Assert.AreEqual(1, scheduled.Count, "Terminal callbacks must release recovered ownership.");
             service.RunFinished(ResultStub.Suite(new ResultStub("Next.Pass", "Passed")));
             double deadline = EditorApplication.timeSinceStartup + 5;
             while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
@@ -293,6 +328,112 @@ namespace MCPForUnityTests.Editor.Services
             var result = pending.GetAwaiter().GetResult();
             Assert.AreEqual(1, result.Passed);
             Assert.AreEqual(TestJobStatus.Succeeded, nextJob.Status);
+        }
+
+        [UnityTest]
+        public IEnumerator QueuedRequestOfClearedJob_DoesNotRunAsNewerJob()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            string first = TestJobManager.StartJob(TestMode.EditMode, new TestFilterOptions { TestNames = new[] { "First.Test" } });
+            AutoFail(first);
+            string second = TestJobManager.StartJob(TestMode.EditMode, new TestFilterOptions { TestNames = new[] { "Second.Test" } });
+            AutoFail(second);
+            string third = TestJobManager.StartJob(TestMode.EditMode, new TestFilterOptions { TestNames = new[] { "Third.Test" } });
+            Assert.AreEqual(1, scheduled.Count, "Later requests wait for the first run.");
+
+            service.RunFinished(ResultStub.Suite(new ResultStub("First.Test", "Passed")));
+            double deadline = EditorApplication.timeSinceStartup + 5;
+            while (scheduled.Count < 2 && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.AreEqual(2, scheduled.Count);
+            CollectionAssert.AreEqual(new[] { "Third.Test" }, scheduled[1].filters[0].testNames,
+                "A request left over from a cleared job must not run as the newer job.");
+            service.RunFinished(ResultStub.Suite(new ResultStub("Third.Test", "Passed")));
+            Assert.AreEqual(TestJobStatus.Succeeded, _jobs[third].Status);
+            Assert.AreEqual("Third.Test", _jobs[third].Result.Results.Single().FullName);
+        }
+
+        [UnityTest]
+        public IEnumerator QueuedRequestOfClearedJob_DoesNotStartUnownedRun()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            // Holding the lock stands in for GetTestsAsync, the other caller that takes it.
+            var gate = (SemaphoreSlim)typeof(TestRunnerService)
+                .GetField("_operationLock", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
+            Assert.IsTrue(gate.Wait(0));
+            AddJob("queued");
+            var pending = service.RunTestsAsync(TestMode.EditMode);
+            AutoFail("queued");
+            gate.Release();
+
+            double deadline = EditorApplication.timeSinceStartup + 5;
+            while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.IsTrue(pending.IsFaulted, "A cleared job's request must not start once the runner frees up.");
+            Assert.IsEmpty(scheduled);
+            Assert.IsFalse(TestRunStatus.IsRunning);
+        }
+
+        [Test]
+        public void ReloadWhileJobWaited_FailsJob_InsteadOfCreditingOlderRun()
+        {
+            AddJob("orphan").Status = TestJobStatus.Failed;
+            var queued = AddJob("queued");
+            var service = RestoreCallbacks(owner: "orphan");
+
+            Assert.AreEqual(TestJobStatus.Failed, queued.Status, "Its request died with the old domain.");
+            StringAssert.Contains("domain reload", queued.Error);
+            service.RunStarted(null);
+            service.TestFinished(new ResultStub("Orphan.Test", "Passed"));
+            service.RunFinished(ResultStub.Suite(new ResultStub("Orphan.Test", "Passed")));
+
+            Assert.IsNull(queued.Result);
+            Assert.AreEqual(0, queued.CompletedTests);
+            Assert.AreEqual(string.Empty, SessionState.GetString(OwnerPrefix + "JobId", "missing"));
+        }
+
+        [Test]
+        public void RunResumedAfterReload_KeepsRunnerBusy_UntilItFinishes()
+        {
+            AddJob("orphan").Status = TestJobStatus.Failed;
+            ManagerField("_currentJobId").SetValue(null, null);
+            RestoreCallbacks(owner: "orphan");
+            Assert.IsTrue(TestRunStatus.IsRunning, "Its job was cleared, but Unity resumes the run after the reload.");
+
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            var next = AddJob("next");
+            var pending = service.RunTestsAsync(TestMode.EditMode);
+            Assert.IsTrue(pending.IsFaulted, "A new run must not overlap the resumed one.");
+            Assert.IsEmpty(scheduled);
+
+            service.RunFinished(ResultStub.Suite(new ResultStub("Orphan.Test", "Passed")));
+            Assert.AreEqual(TestJobStatus.Running, next.Status);
+            Assert.IsNull(next.Result);
+        }
+
+        [Test]
+        public void PlayModeGuard_KeepsSettingsForResumedRun_WithoutCurrentJob()
+        {
+            AddJob("orphan").Status = TestJobStatus.Failed;
+            ManagerField("_currentJobId").SetValue(null, null);
+            SessionState.SetString(OwnerPrefix + "JobId", "orphan");
+            SessionState.SetString(OwnerPrefix + "Mode", "PlayMode");
+            PlayModeOptionsGuard.Save(false, EnterPlayModeOptions.None);
+            EditorSettings.enterPlayModeOptionsEnabled = true;
+            EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+
+            PlayModeOptionsGuard.RestoreIfIdle();
+            Assert.IsTrue(PlayModeOptionsGuard.IsPending, "The settings belong to the resumed run until it finishes.");
+            Assert.IsTrue(EditorSettings.enterPlayModeOptionsEnabled);
+
+            var service = RestoreCallbacks(owner: "orphan", mode: "PlayMode");
+            service.RunFinished(ResultStub.Suite(new ResultStub("Orphan.Test", "Passed")));
+            Assert.IsFalse(PlayModeOptionsGuard.IsPending);
+            Assert.IsFalse(EditorSettings.enterPlayModeOptionsEnabled);
+            Assert.AreEqual(EnterPlayModeOptions.None, EditorSettings.enterPlayModeOptions);
         }
 
         [Test]

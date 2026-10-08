@@ -42,7 +42,10 @@ namespace MCPForUnity.Editor.Services
         {
             // After domain reload or editor restart: if a restore is pending and no test run
             // is active, restore now. TryLoad checks SessionState first, then the marker file.
-            if (TryLoad(out _, out _) && !TestRunStatus.IsRunning && !TestJobManager.HasRunningJob)
+            // A run the Test Runner resumes after the reload still needs the settings, even if
+            // its job was cleared, so a recorded run owner also counts as active.
+            if (TryLoad(out _, out _) && !TestRunStatus.IsRunning && !TestJobManager.HasRunningJob &&
+                !TestRunnerService.TryLoadRunOwner(out _, out _))
             {
                 Restore();
             }
@@ -152,6 +155,12 @@ namespace MCPForUnity.Editor.Services
     {
         private static readonly TestMode[] AllModes = { TestMode.EditMode, TestMode.PlayMode };
 
+        // The job that started the in-flight run, recorded until the run reports back. SessionState
+        // survives domain reloads, which the Test Runner resumes runs across, so a resumed run stays
+        // tied to the job that started it instead of whichever job is current.
+        private const string KeyRunOwnerJobId = "MCPForUnity.TestRunOwner.JobId";
+        private const string KeyRunOwnerMode = "MCPForUnity.TestRunOwner.Mode";
+
         private readonly TestRunnerApi _testRunnerApi;
         private readonly SemaphoreSlim _operationLock = new SemaphoreSlim(1, 1);
         private readonly List<ITestResultAdaptor> _leafResults = new List<ITestResultAdaptor>();
@@ -167,8 +176,9 @@ namespace MCPForUnity.Editor.Services
 
         internal void ResumeJobAfterReload(string jobId, string mode)
         {
-            if (_runCompletionSource != null || _trackedJobId != null ||
-                string.IsNullOrEmpty(jobId) || TestJobManager.CurrentJobId != jobId)
+            // The owner may already be cleared. Tracking its run anyway keeps the run's callbacks
+            // out of newer jobs and refuses overlapping runs until it reports back.
+            if (_runCompletionSource != null || _trackedJobId != null || string.IsNullOrEmpty(jobId))
             {
                 return;
             }
@@ -178,6 +188,19 @@ namespace MCPForUnity.Editor.Services
             {
                 TestRunStatus.MarkStarted(testMode);
             }
+        }
+
+        internal static bool TryLoadRunOwner(out string jobId, out string mode)
+        {
+            jobId = SessionState.GetString(KeyRunOwnerJobId, string.Empty);
+            mode = SessionState.GetString(KeyRunOwnerMode, string.Empty);
+            return !string.IsNullOrEmpty(jobId);
+        }
+
+        internal static void ClearRunOwner()
+        {
+            SessionState.SetString(KeyRunOwnerJobId, string.Empty);
+            SessionState.SetString(KeyRunOwnerMode, string.Empty);
         }
 
         private bool IsTrackingCurrentJob =>
@@ -216,9 +239,14 @@ namespace MCPForUnity.Editor.Services
             // Clearing a job must not let a second run consume the first run's callbacks.
             if (_trackedJobId != null && _runCompletionSource == null)
             {
-                throw new InvalidOperationException("A recovered Unity test run is still in progress.");
+                throw new InvalidOperationException(
+                    "A recovered Unity test run is still in progress. Wait for it to finish, or abandon it: "
+                    + "run_tests(clear_stuck=true), then force a domain reload and retry.");
             }
 
+            // StartJob makes its job current just before calling this. A request that waits for an
+            // earlier run must never start for, or report into, a job that became current meanwhile.
+            string requestingJobId = TestJobManager.CurrentJobId;
             await _operationLock.WaitAsync().ConfigureAwait(true);
             Task<TestRunResult> runTask;
             bool adjustedPlayModeOptions = false;
@@ -226,6 +254,12 @@ namespace MCPForUnity.Editor.Services
             EnterPlayModeOptions originalEnterPlayModeOptions = EnterPlayModeOptions.None;
             try
             {
+                if (TestJobManager.CurrentJobId != requestingJobId)
+                {
+                    McpLog.Warn($"[TestRunnerService] Test job {requestingJobId} was cleared while waiting for an earlier run; not starting it.");
+                    throw new InvalidOperationException($"Test job {requestingJobId} was cleared before its Unity test run could start.");
+                }
+
                 if (_runCompletionSource != null && !_runCompletionSource.Task.IsCompleted)
                 {
                     throw new InvalidOperationException("A Unity test run is already in progress.");
@@ -251,7 +285,7 @@ namespace MCPForUnity.Editor.Services
                 }
 
                 _leafResults.Clear();
-                _trackedJobId = TestJobManager.CurrentJobId;
+                _trackedJobId = requestingJobId;
                 _runCompletionSource = new TaskCompletionSource<TestRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
                 // Mark running immediately so readiness snapshots reflect the busy state even before callbacks fire.
                 TestRunStatus.MarkStarted(mode);
@@ -280,6 +314,11 @@ namespace MCPForUnity.Editor.Services
                 }
 
                 _testRunnerApi.Execute(settings);
+                if (_trackedJobId != null)
+                {
+                    SessionState.SetString(KeyRunOwnerJobId, _trackedJobId);
+                    SessionState.SetString(KeyRunOwnerMode, mode.ToString());
+                }
 
                 runTask = _runCompletionSource.Task;
             }
@@ -287,6 +326,7 @@ namespace MCPForUnity.Editor.Services
             {
                 _trackedJobId = null;
                 _runCompletionSource = null;
+                ClearRunOwner();
                 // Ensure the status is cleared if we failed to start the run.
                 TestRunStatus.MarkFinished();
                 if (adjustedPlayModeOptions)
@@ -409,6 +449,7 @@ namespace MCPForUnity.Editor.Services
             var completion = _runCompletionSource;
             _runCompletionSource = null;
             _trackedJobId = null;
+            ClearRunOwner();
             if (completion != null)
             {
                 if (error == null) completion.TrySetResult(payload);
