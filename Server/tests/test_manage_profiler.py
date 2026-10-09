@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import get_type_hints
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import TypeAdapter
 
 from services.tools.manage_profiler import (
     manage_profiler,
@@ -152,6 +154,23 @@ def test_sample_start_forwards_params(mock_unity):
     assert mock_unity["params"]["label"] == "baseline"
     assert mock_unity["params"]["counters"] == "render"
     assert mock_unity["params"]["capacity"] == 600
+
+
+def test_counters_accepts_a_list_of_counter_names():
+    counters_type = get_type_hints(manage_profiler, include_extras=True)["counters"]
+    names = ["Main Thread", "GC Allocated In Frame"]
+    assert TypeAdapter(counters_type).validate_python(names) == names
+
+
+def test_sample_start_forwards_counter_names_list(mock_unity):
+    names = ["Main Thread", "GC Allocated In Frame"]
+    result = asyncio.run(
+        manage_profiler(
+            SimpleNamespace(), action="sample_start", label="named", counters=names,
+        )
+    )
+    assert result["success"] is True
+    assert mock_unity["params"]["counters"] == names
 
 
 def test_sample_stop_forwards_label(mock_unity):

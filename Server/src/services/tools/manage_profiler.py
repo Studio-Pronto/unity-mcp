@@ -105,7 +105,7 @@ async def manage_profiler(
     action: Annotated[ProfilerAction, "The profiler action to perform."],
     # Counter sampling
     label: Annotated[Optional[str], "Session label for sampling or memory snapshots."] = None,
-    counters: Annotated[Optional[str], "Category name (e.g. 'render', 'physics') or JSON array of counter names."] = None,
+    counters: Annotated[Optional[list[str] | str], "Category name (e.g. 'render', 'physics', 'gc'), or a list of counter names (see counter_list)."] = None,
     capacity: Annotated[Optional[int], "Ring buffer capacity (frames). Default 300."] = None,
     last_n: Annotated[Optional[int], "Read only last N frames from session."] = None,
     # Comparison
