@@ -1465,8 +1465,9 @@ Unity Profiler session control, counter reads, memory snapshots, and Frame Debug
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | See action groups below |
-| `category` | string | For get_counters | Profiler category name (e.g. `Render`, `Scripts`, `Memory`, `Physics`) |
-| `counters` | list[str] | No | Specific counter names for get_counters. Omit to read all in category |
+| `label` | string | For sample_start, sample_read | Sampling session name (event_begin/event_end reuse it); sample_stop without it stops every session |
+| `counters` | string or list[str] | For sample_start, counter_read | A category name (e.g. `render`, `gc`, `physics`) or a list of exact counter names. An unknown category or name is an error that lists what is registered |
+| `category` | string | No | counter_list filter: only counters in this category (e.g. `Render`, `GC`) |
 | `object_path` | string | For get_object_memory | Scene hierarchy or asset path |
 | `log_file` | string | No | Path to `.raw` file for profiler_start recording |
 | `enable_callstacks` | bool | No | Enable allocation callstacks for profiler_start |
@@ -1482,7 +1483,7 @@ Unity Profiler session control, counter reads, memory snapshots, and Frame Debug
 **Action groups:**
 
 - **Session:** `profiler_start`, `profiler_stop`, `profiler_status`, `profiler_set_areas`
-- **Counters:** `get_frame_timing`, `get_counters`, `get_object_memory`
+- **Counters:** `sample_start`, `sample_stop`, `sample_read`, `sample_compare`, `sample_list` (sampling sessions), `counter_read` (one-shot), `counter_list` (find exact names), `get_frame_timing`, `get_object_memory`
 - **Memory Snapshot:** `memory_take_snapshot`, `memory_list_snapshots`, `memory_compare_snapshots` (requires `com.unity.memoryprofiler`)
 - **Frame Debugger:** `frame_debugger_enable`, `frame_debugger_disable`, `frame_debugger_get_events` — events include `batch_break_cause` (+ readable text), `shader_keywords`, shader/mesh/RT info; pass `include_render_state=true` for per-draw blend/raster/depth/stencil state
 - **Event Window:** `event_begin`, `event_end` — bracket a gameplay event; `event_end` returns per-marker self-time + GC across ALL threads (Job/Burst workers included) with the worst frame flagged. Catches transient worker-thread bursts that `hotspots_get`/`gc_track` (trailing window, thread 0) miss. Reuses `label`/`top_n`/`min_ms`.
@@ -1508,9 +1509,15 @@ manage_profiler(action="profiler_stop")
 # Read frame timing data (12 fields from FrameTimingManager)
 manage_profiler(action="get_frame_timing")
 
-# Read counters by category
-manage_profiler(action="get_counters", category="Render")
-manage_profiler(action="get_counters", category="Memory", counters=["Total Used Memory", "GC Used Memory"])
+# Sample counters over many frames: a whole category, or named counters
+manage_profiler(action="sample_start", label="render", counters="render")
+manage_profiler(action="sample_start", label="memory", counters=["Total Used Memory", "GC Used Memory"])
+manage_profiler(action="sample_read", label="memory")  # mean/min/max/p95/p99 per counter
+manage_profiler(action="sample_stop", label="memory")
+
+# One-shot read, and finding exact counter names
+manage_profiler(action="counter_read", counters=["Main Thread", "GC Allocated In Frame"])
+manage_profiler(action="counter_list", category="GC", search="Alloc")
 
 # Get memory size of a specific object
 manage_profiler(action="get_object_memory", object_path="Player/Mesh")

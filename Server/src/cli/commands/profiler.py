@@ -13,7 +13,7 @@ def profiler():
 
 @profiler.command("sample-start")
 @click.option("--label", "-l", required=True, help="Session label.")
-@click.option("--counters", "-c", required=True, help="Category name or counter names.")
+@click.option("--counters", "-c", required=True, help="Category name, or a JSON array of counter names.")
 @click.option("--capacity", type=int, default=None, help="Ring buffer capacity (frames).")
 @handle_unity_errors
 def sample_start(label, counters, capacity):
@@ -171,7 +171,7 @@ def capture_status():
 # --- Counter discovery ---
 
 @profiler.command("counter-read")
-@click.option("--counters", "-c", required=True, help="Category name or counter names.")
+@click.option("--counters", "-c", required=True, help="Category name, or a JSON array of counter names.")
 @handle_unity_errors
 def counter_read(counters):
     """One-shot read of specific profiler counters."""

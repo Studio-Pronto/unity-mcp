@@ -44,7 +44,7 @@ EVENT WINDOW (bracket a gameplay event, all-thread CPU+GC): event_begin (marks c
 |------|------|----------|-------------|
 | `action` | `Literal['ping', 'sample_start', 'sample_stop', 'sample_read', 'sample_compare', 'sample_list', 'counter_read', 'counter_list', 'frame_time_get', 'frame_timing_get', 'hotspots_get', 'hotspots_detail', 'gc_track', 'threads_list', 'timeline_get', 'frame_get', 'memory_snapshot', 'memory_compare', 'memory_objects', 'memory_type_summary', 'memory_fragmentation', 'capture_start', 'capture_stop', 'capture_status', 'capture_load', 'capture_save', 'profiler_enable', 'profiler_disable', 'deep_profiling_set', 'area_set', 'profiler_status', 'callstacks_set', 'gpu_profiling_set', 'physics_get', 'object_memory_get', 'snap_take', 'snap_list', 'snap_compare', 'frame_debugger_enable', 'frame_debugger_disable', 'frame_debugger_get_events', 'event_begin', 'event_end']` | yes | The profiler action to perform. |
 | `label` | `str \| None` | — | Session label for sampling or memory snapshots. |
-| `counters` | `str \| None` | — | Category name (e.g. 'render', 'physics') or JSON array of counter names. |
+| `counters` | `list[str] \| str \| None` | — | Category name (e.g. 'render', 'physics', 'gc'), or a list of counter names (see counter_list). |
 | `capacity` | `int \| None` | — | Ring buffer capacity (frames). Default 300. |
 | `last_n` | `int \| None` | — | Read only last N frames from session. |
 | `label_a` | `str \| None` | — | First session label for comparison. |

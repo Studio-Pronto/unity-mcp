@@ -62,9 +62,9 @@ namespace MCPForUnity.Editor.Tools.Profiler
             if (string.IsNullOrEmpty(countersParam))
                 return new ErrorResponse("'counters' parameter is required. Pass a category name (e.g. 'render', 'physics') or a JSON array of counter names.");
 
-            var counterSpecs = ResolveCounters(countersParam, @params);
-            if (counterSpecs.Count == 0)
-                return new ErrorResponse($"No counters found for '{countersParam}'. Valid categories: render, scripts, memory, physics, animation, audio, lighting, network, gui, ai, video, loading, input, vr, particles, internal.");
+            var counterSpecs = ResolveCounters(p.GetRaw("counters"), out string error);
+            if (error != null)
+                return new ErrorResponse(error);
 
             var session = new SamplingSession
             {
@@ -74,16 +74,16 @@ namespace MCPForUnity.Editor.Tools.Profiler
             };
 
             int failed = 0;
-            foreach (var (name, category) in counterSpecs)
+            foreach (var counter in counterSpecs)
             {
                 try
                 {
                     var recorder = ProfilerRecorder.StartNew(
-                        TryResolveCategory(category),
-                        name,
+                        counter.Category,
+                        counter.Name,
                         capacity);
                     if (recorder.Valid)
-                        session.Recorders.Add((name, category, recorder));
+                        session.Recorders.Add((counter.Name, counter.Category.Name, recorder));
                     else
                     {
                         recorder.Dispose();
@@ -405,21 +405,21 @@ namespace MCPForUnity.Editor.Tools.Profiler
             if (string.IsNullOrEmpty(countersParam))
                 return new ErrorResponse("'counters' parameter is required. Pass a category name or JSON array of counter names.");
 
-            var counterSpecs = ResolveCounters(countersParam, @params);
-            if (counterSpecs.Count == 0)
-                return new ErrorResponse($"No counters found for '{countersParam}'.");
+            var counterSpecs = ResolveCounters(p.GetRaw("counters"), out string error);
+            if (error != null)
+                return new ErrorResponse(error);
 
             var recorders = new List<(string name, ProfilerRecorder recorder)>();
             try
             {
-                foreach (var (name, category) in counterSpecs)
+                foreach (var counter in counterSpecs)
                 {
                     try
                     {
                         var recorder = ProfilerRecorder.StartNew(
-                            TryResolveCategory(category), name, 4);
+                            counter.Category, counter.Name, 4);
                         if (recorder.Valid)
-                            recorders.Add((name, recorder));
+                            recorders.Add((counter.Name, recorder));
                         else
                             recorder.Dispose();
                     }
@@ -470,21 +470,21 @@ namespace MCPForUnity.Editor.Tools.Profiler
             if (frames > 1500) frames = 1500;
 
             // Resolve all Physics category counters dynamically
-            var physicsCounters = ResolveCounters("physics", new JObject { ["counters"] = "physics" });
-            if (physicsCounters.Count == 0)
+            var physicsCounters = ResolveCounters("physics", out string error);
+            if (error != null)
                 return new ErrorResponse("No Physics profiler counters found.");
 
             var recorders = new List<(string name, ProfilerRecorder recorder)>();
             try
             {
-                foreach (var (name, category) in physicsCounters)
+                foreach (var counter in physicsCounters)
                 {
                     try
                     {
                         var recorder = ProfilerRecorder.StartNew(
-                            ProfilerCategory.Physics, name, frames);
+                            ProfilerCategory.Physics, counter.Name, frames);
                         if (recorder.Valid)
-                            recorders.Add((name, recorder));
+                            recorders.Add((counter.Name, recorder));
                         else
                             recorder.Dispose();
                     }
@@ -546,18 +546,21 @@ namespace MCPForUnity.Editor.Tools.Profiler
 
             var allHandles = new List<ProfilerRecorderHandle>();
             ProfilerRecorderHandle.GetAvailable(allHandles);
+            var available = allHandles.Select(h => ProfilerRecorderHandle.GetDescription(h)).ToList();
+
+            if (!string.IsNullOrEmpty(category) &&
+                !available.Any(d => string.Equals(d.Category.Name, category, StringComparison.OrdinalIgnoreCase)))
+            {
+                var valid = available.Select(d => d.Category.Name).Distinct().OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+                return new ErrorResponse($"No counters are registered under category '{category}'. Valid categories: {string.Join(", ", valid)}.");
+            }
 
             var counters = new List<(string name, string cat, string unit)>();
-            foreach (var handle in allHandles)
+            foreach (var desc in available)
             {
-                var desc = ProfilerRecorderHandle.GetDescription(handle);
-
-                if (!string.IsNullOrEmpty(category))
-                {
-                    var resolved = TryResolveCategory(category);
-                    if (!string.Equals(desc.Category.Name, resolved.Name, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                }
+                if (!string.IsNullOrEmpty(category) &&
+                    !string.Equals(desc.Category.Name, category, StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 if (!string.IsNullOrEmpty(search) &&
                     desc.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
@@ -711,64 +714,51 @@ namespace MCPForUnity.Editor.Tools.Profiler
             };
         }
 
-        internal static List<(string name, string category)> ResolveCounters(string countersParam, JObject @params)
+        // A JSON array of counter names (or a string holding one), otherwise a category name. Both
+        // are matched against what Unity has registered right now: anything unmatched is an error,
+        // never a fallback to some other set of counters.
+        internal static List<ProfilerRecorderDescription> ResolveCounters(JToken counters, out string error)
         {
-            var result = new List<(string name, string category)>();
+            error = null;
+            var allHandles = new List<ProfilerRecorderHandle>();
+            ProfilerRecorderHandle.GetAvailable(allHandles);
+            var available = allHandles.Select(h => ProfilerRecorderHandle.GetDescription(h)).ToList();
 
-            // Check if it's a JSON array of counter names
-            var countersToken = @params?["counters"];
-            if (countersToken is JArray arr)
+            string text = counters?.ToString().Trim() ?? string.Empty;
+            if (text.StartsWith("["))
             {
-                foreach (var item in arr)
+                var names = ToolParams.CoerceStringArray(counters);
+                if (names == null)
                 {
-                    string name = item.ToString();
-                    result.Add((name, ""));
+                    error = "'counters' lists no counter names.";
+                    return null;
                 }
+
+                var result = new List<ProfilerRecorderDescription>();
+                var unknown = new List<string>();
+                foreach (var name in names)
+                {
+                    int index = available.FindIndex(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase));
+                    if (index >= 0)
+                        result.Add(available[index]);
+                    else
+                        unknown.Add($"'{name}'");
+                }
+
+                if (unknown.Count > 0)
+                    error = $"Unknown counter(s): {string.Join(", ", unknown)}. Counters register when they first run; use counter_list with search to find registered names.";
                 return result;
             }
 
-            // Otherwise treat as category name preset
-            string categoryName = countersParam.ToLowerInvariant().Trim();
-            var category = TryResolveCategory(categoryName);
-
-            var allHandles = new List<ProfilerRecorderHandle>();
-            ProfilerRecorderHandle.GetAvailable(allHandles);
-
-            foreach (var handle in allHandles)
+            var inCategory = available
+                .Where(d => string.Equals(d.Category.Name, text, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (inCategory.Count == 0)
             {
-                var desc = ProfilerRecorderHandle.GetDescription(handle);
-                if (string.Equals(desc.Category.Name, category.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    result.Add((desc.Name, desc.Category.Name));
-                }
+                var valid = available.Select(d => d.Category.Name).Distinct().OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+                error = $"No counters are registered under category '{text}'. Valid categories: {string.Join(", ", valid)}. To record specific counters, pass a JSON array of counter names.";
             }
-
-            return result;
-        }
-
-        private static ProfilerCategory TryResolveCategory(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return ProfilerCategory.Render;
-            switch (name.ToLowerInvariant())
-            {
-                case "render": return ProfilerCategory.Render;
-                case "scripts": return ProfilerCategory.Scripts;
-                case "memory": return ProfilerCategory.Memory;
-                case "physics": return ProfilerCategory.Physics;
-                case "animation": return ProfilerCategory.Animation;
-                case "audio": return ProfilerCategory.Audio;
-                case "lighting": return ProfilerCategory.Lighting;
-                case "network": return ProfilerCategory.Network;
-                case "gui": return ProfilerCategory.Gui;
-                case "ai": return ProfilerCategory.Ai;
-                case "video": return ProfilerCategory.Video;
-                case "loading": return ProfilerCategory.Loading;
-                case "input": return ProfilerCategory.Input;
-                case "vr": return ProfilerCategory.Vr;
-                case "particles": return ProfilerCategory.Particles;
-                case "internal": return ProfilerCategory.Internal;
-                default: return ProfilerCategory.Render;
-            }
+            return inCategory;
         }
 
         private static Dictionary<string, object> ComputeStats(long[] values, ProfilerMarkerDataUnit unitType)
