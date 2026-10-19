@@ -8,9 +8,9 @@ setlocal enabledelayedexpansion
 ::   tools\update_fork.bat [upstream-ref]
 ::
 :: Examples:
-::   tools\update_fork.bat                    &:: merges upstream/main
+::   tools\update_fork.bat                    &:: merges upstream/beta, the branch the fork tracks
 ::   tools\update_fork.bat v9.6.0             &:: merges a specific tag
-::   tools\update_fork.bat upstream/beta      &:: merges a specific branch
+::   tools\update_fork.bat upstream/main      &:: merges a specific branch
 :: =============================================================================
 
 set "REPO_ROOT=%~dp0.."
@@ -18,7 +18,7 @@ set "CONFIGURATOR_DIR=%REPO_ROOT%\MCPForUnity\Editor\Clients\Configurators"
 set "KEEP_CONFIGURATOR=ClaudeCodeConfigurator"
 
 set "UPSTREAM_REF=%~1"
-if "%UPSTREAM_REF%"=="" set "UPSTREAM_REF=upstream/main"
+if "%UPSTREAM_REF%"=="" set "UPSTREAM_REF=upstream/beta"
 
 :: --- Pre-flight checks -------------------------------------------------------
 
@@ -60,6 +60,7 @@ if errorlevel 1 (
 )
 
 call :apply_fixups
+if errorlevel 1 exit /b 1
 echo.
 echo Done. Review with: git log --oneline -5
 exit /b 0
@@ -85,10 +86,13 @@ if %removed% gtr 0 (
     echo No extra configurators to remove.
 )
 
-:: 2. Detect upstream version and apply fork suffix
-for /f "delims=" %%v in ('python3 -c "import json,pathlib; v=json.loads(pathlib.Path('%REPO_ROOT:\=/%/MCPForUnity/package.json').read_text())['version']; print(v.split('-fork')[0])"') do set "UPSTREAM_VERSION=%%v"
-
-set "FORK_VERSION=%UPSTREAM_VERSION%-fork.1"
+:: 2. Apply the fork suffix to upstream's version (see tools\next_fork_version.py)
+set "FORK_VERSION="
+for /f "delims=" %%v in ('python3 "%REPO_ROOT%\tools\next_fork_version.py"') do set "FORK_VERSION=%%v"
+if "%FORK_VERSION%"=="" (
+    echo Error: could not determine the fork version.
+    exit /b 1
+)
 echo Setting fork version: %FORK_VERSION%
 python3 "%REPO_ROOT%\tools\update_versions.py" --version "%FORK_VERSION%"
 

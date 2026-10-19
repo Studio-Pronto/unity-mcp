@@ -8,9 +8,9 @@ set -euo pipefail
 #   ./tools/update_fork.sh [upstream-ref]
 #
 # Examples:
-#   ./tools/update_fork.sh                    # merges upstream/main
+#   ./tools/update_fork.sh                    # merges upstream/beta, the branch the fork tracks
 #   ./tools/update_fork.sh v9.6.0             # merges a specific tag
-#   ./tools/update_fork.sh upstream/beta      # merges a specific branch
+#   ./tools/update_fork.sh upstream/main      # merges a specific branch
 # =============================================================================
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,7 +23,7 @@ if [[ "${1:-}" == "--fixup-only" ]]; then
     FIXUP_ONLY=true
     UPSTREAM_REF=""
 else
-    UPSTREAM_REF="${1:-upstream/main}"
+    UPSTREAM_REF="${1:-upstream/beta}"
 fi
 
 # --- Pre-flight checks -------------------------------------------------------
@@ -76,17 +76,9 @@ apply_fixups() {
         echo "No extra configurators to remove."
     fi
 
-    # 2. Detect upstream version and apply fork suffix
-    local upstream_version
-    upstream_version="$(python3 -c "
-import json, pathlib
-p = pathlib.Path('$REPO_ROOT/MCPForUnity/package.json')
-v = json.loads(p.read_text())['version']
-# Strip any existing fork suffix
-print(v.split('-fork')[0])
-")"
-
-    local fork_version="${upstream_version}-fork.1"
+    # 2. Apply the fork suffix to upstream's version (see tools/next_fork_version.py)
+    local fork_version
+    fork_version="$(python3 "$REPO_ROOT/tools/next_fork_version.py")"
     echo "Setting fork version: $fork_version"
     python3 "$REPO_ROOT/tools/update_versions.py" --version "$fork_version"
 

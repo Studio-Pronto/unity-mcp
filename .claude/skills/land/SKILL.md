@@ -27,7 +27,7 @@ This fork has **no Unity license in CI** and runs tests locally, so `/land` **ne
 - **Invoking `/land` IS the authorization** for the version bump, the push, the PR, the merge, and evidence-bearing closes of issues the landed PR/commits explicitly reference (the `/issues` skill defers its close to `/land`).
 - **`main` only advances to a tree that passed the local gate in the exact state that lands.** The gate runs on the branch in this checkout; the merge pins the gated commit with `--match-head-commit` and rechecks base freshness immediately before merging. The lone exception is a **no-op landing** — a diff with no compiled/runtime effect (comments, docs, whitespace) — where there is nothing to test.
 - **Every mutating command is self-guarding.** Never force-push a shared ref; **never `git reset --hard`** (use `git reset --keep`); never hand-merge Unity YAML; fast-forward-only pulls of `main`.
-- **Merge method depends on the PR:** **squash** for a feature branch (one commit per landing, subject `<title> (#N)`); **`--merge`** for an upstream-sync branch (`sync/upstream-*`) so the merge commit — and the merge-base with `upstream/main` — is preserved. Squashing an upstream sync would destroy the merge-base and make every future `/merge` re-conflict.
+- **Merge method depends on the PR:** **squash** for a feature branch (one commit per landing, subject `<title> (#N)`); **`--merge`** for an upstream-sync branch (`sync/upstream-*`) so the merge commit — and the merge-base with upstream — is preserved. Squashing an upstream sync would destroy the merge-base and make every future `/merge` re-conflict.
 
 ## Workflow
 
@@ -65,7 +65,7 @@ The fork version is `X.Y.Z-fork.N` in `MCPForUnity/package.json`. `/land` ensure
 
 1. `BASE_V` = `origin/main`'s version: `git show origin/main:MCPForUnity/package.json | python3 -c "import sys,json;print(json.load(sys.stdin)['version'])"`. `HEAD_V` = the same from the working tree.
 2. **`HEAD_V == BASE_V`** → bump: increment `N` (or start at `-fork.1` if `BASE_V` has no `-fork.` suffix), then `python3 tools/update_versions.py --version <new>` and commit `Bump version to <new>` on the branch. `update_versions.py` self-skips `pyproject.toml` for `-fork.` versions (PEP 440), so **no manual pyproject edit and no `uv lock`** are needed.
-3. **`HEAD_V` already ahead** (e.g. an upstream-sync branch that `update_fork.sh` already stamped `<upstream>-fork.1`) → leave it.
+3. **`HEAD_V` already ahead** (e.g. an upstream-sync branch that `update_fork.sh` already stamped) → leave it.
 
 ### GATE (shared — the exact tree that ships, local only)
 
@@ -98,7 +98,7 @@ The fork version is `X.Y.Z-fork.N` in `MCPForUnity/package.json`. `/land` ensure
      --body "<one-line summary; enumerated commit subjects; issue refs>"
    ```
 3. **Choose the merge method:**
-   - `HEAD_REF` matches `sync/upstream-*` (or its tip is a merge commit whose second parent is an ancestor of `upstream/main`) → **upstream sync → `--merge`.**
+   - `HEAD_REF` matches `sync/upstream-*` (or its tip is a merge commit whose second parent is an ancestor of `upstream/beta`) → **upstream sync → `--merge`.**
    - Otherwise → **feature → `--squash`.**
 4. **Mergeability:** poll `gh pr view N -R Studio-Pronto/unity-mcp --json mergeable,mergeStateStatus` while `UNKNOWN` (GitHub computes it async — **never treat `UNKNOWN` as `CONFLICTING`**). `CONFLICTING`/`DIRTY` → base moved → re-enter GATE step 2.
 5. **Final base recheck** (`--match-head-commit` pins the head, not the base): `git fetch origin main && git merge-base --is-ancestor origin/main "$GATED_SHA"` → else re-enter GATE step 2.

@@ -1,11 +1,13 @@
 ---
 name: merge
-description: Merge upstream changes into the fork on a sync branch. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, audits the fork delta for dropped edits, gates on Python tests, applies fork fixups, then lands the sync branch via a PR (/land) — never a direct push to main.
+description: Merge upstream's beta branch into the fork on a sync branch. Checks for clean working tree, deeply analyzes incoming commits and conflicts, resolves them one-by-one with rerere awareness, audits the fork delta for dropped edits, gates on Python tests, applies fork fixups, then lands the sync branch via a PR (/land) — never a direct push to main.
 ---
 
 # Merge Upstream into Fork
 
 You are merging upstream (CoplayDev/unity-mcp) changes into the Studio-Pronto fork.
+
+The fork tracks upstream's **`beta`** branch, not `main`. Upstream's releases are snapshots of beta plus a version bump, so merging `main` only gets the same changes later.
 
 The bar for this skill: **understand every incoming change deeply enough to explain its behavioral effect on fork-specific code, and review every single conflict resolution explicitly — never bulk-apply rules without reading both sides first.**
 
@@ -52,15 +54,15 @@ If rerere is not enabled, **stop and tell the user**:
 ### 3. Check if there's anything to merge, then cut the sync branch
 
 ```bash
-git log --oneline origin/main..upstream/main
+git log --oneline origin/main..upstream/beta
 ```
 
-If empty, report "Already up to date with upstream/main" and stop.
+If empty, report "Already up to date with upstream/beta" and stop.
 
 Otherwise capture the upstream version and cut the sync branch off fresh `origin/main`:
 
 ```bash
-UPSTREAM_VERSION=$(git show upstream/main:MCPForUnity/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+UPSTREAM_VERSION=$(git show upstream/beta:MCPForUnity/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
 git switch --no-track -c "sync/upstream-v${UPSTREAM_VERSION}" origin/main
 ```
 
@@ -73,8 +75,8 @@ Don't summarize from commit messages alone — commit messages lie or under-desc
 #### 4a. Catalogue every incoming commit
 
 ```bash
-git log --oneline --no-merges HEAD..upstream/main
-git diff --stat HEAD..upstream/main
+git log --oneline --no-merges HEAD..upstream/beta
+git diff --stat HEAD..upstream/beta
 ```
 
 For each non-trivial commit (skip pure version bumps, lockfile churn, CI tweaks unless they affect fork CI), do this analysis:
@@ -93,7 +95,7 @@ Find the last upstream merge and intersect changed-file sets:
 ```bash
 LAST_MERGE=$(git log --format=%H --merges --grep="upstream" -1)
 FORK_FILES=$(git diff --name-only $LAST_MERGE..HEAD | sort)
-UPSTREAM_FILES=$(git diff --name-only HEAD..upstream/main | sort)
+UPSTREAM_FILES=$(git diff --name-only HEAD..upstream/beta | sort)
 comm -12 <(echo "$FORK_FILES") <(echo "$UPSTREAM_FILES")
 ```
 
@@ -101,7 +103,7 @@ For every overlapping file, **read both sides**:
 
 ```bash
 git diff $LAST_MERGE..HEAD -- <path>            # what the fork did
-git diff HEAD..upstream/main -- <path>          # what upstream did
+git diff HEAD..upstream/beta -- <path>          # what upstream did
 ```
 
 Describe how the two sets of changes interact. Pay special attention to:
@@ -124,7 +126,7 @@ These won't show up as merge conflicts but can break the fork after the merge:
 Where upstream now ships functionality the fork already implemented:
 
 ```bash
-git diff --name-only --diff-filter=A HEAD..upstream/main   # net-new upstream files
+git diff --name-only --diff-filter=A HEAD..upstream/beta   # net-new upstream files
 ```
 
 For each net-new file or tool, check whether the fork already solves the same problem. If yes:
@@ -136,7 +138,7 @@ For each net-new file or tool, check whether the fork already solves the same pr
 #### 4e. New configurators (fork policy)
 
 ```bash
-git diff --name-status HEAD..upstream/main -- MCPForUnity/Editor/Clients/Configurators/
+git diff --name-status HEAD..upstream/beta -- MCPForUnity/Editor/Clients/Configurators/
 ```
 
 List any added (A) or modified (M) configurators that aren't `ClaudeCodeConfigurator*`. The fixup script will strip these — flag them in case the user wants to keep one.
@@ -172,11 +174,11 @@ Lay out the findings as:
 Save the fork's full divergence from upstream **before** merging. This file is the ground truth the step-8 audit checks against — without it, "did we drop a fork edit?" can only be answered from memory (`HEAD` is the sync branch, still at `origin/main` until the merge below):
 
 ```bash
-git diff upstream/main...HEAD > .git/fork-delta-pre-merge.diff
+git diff upstream/beta...HEAD > .git/fork-delta-pre-merge.diff
 ```
 
 ```bash
-git merge upstream/main --no-commit --no-ff
+git merge upstream/beta --no-commit --no-ff
 ```
 
 (`UPSTREAM_VERSION` was captured in step 3 — used for the sync branch name and the step-9 commit message.)
@@ -238,7 +240,7 @@ For each fork-specific feature touched by the merge (animation tools, read-only 
 
 #### 8a. Fork-delta audit (dropped-edit check)
 
-Post-merge, the fork's remaining delta for a file is `git diff upstream/main -- <path>` (working tree vs upstream). For every file that was conflicted (`--diff-filter=U`), rerere-touched (`git rerere status`), or flagged as overlap in step 4b, compare that against the same file's section in `.git/fork-delta-pre-merge.diff`.
+Post-merge, the fork's remaining delta for a file is `git diff upstream/beta -- <path>` (working tree vs upstream). For every file that was conflicted (`--diff-filter=U`), rerere-touched (`git rerere status`), or flagged as overlap in step 4b, compare that against the same file's section in `.git/fork-delta-pre-merge.diff`.
 
 Line numbers and context lines will have shifted — that churn is expected; read through it. What you are looking for: fork content lines (`+` lines in the pre-merge snapshot) that no longer appear in the post-merge delta. Every disappearance must be one of:
 
@@ -290,7 +292,7 @@ rerere will record any *new* resolutions you produced this merge into `.git/rr-c
 
 This will:
 - Remove non-ClaudeCode configurator files
-- Set the fork version suffix (e.g., `9.6.0-fork.1`)
+- Set the fork version: upstream's base version plus `-fork.N`, with N continuing while the base is unchanged (e.g. `10.3.1-beta.10` → `10.3.1-fork.1`; see `tools/next_fork_version.py`)
 - Regenerate `uv.lock`
 - Commit the fixups
 
