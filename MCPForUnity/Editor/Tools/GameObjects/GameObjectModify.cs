@@ -51,9 +51,10 @@ namespace MCPForUnity.Editor.Tools.GameObjects
                     // Only rename if the path actually changes
                     if (newAssetPath != assetPath)
                     {
-                        // Check for collision using GUID comparison
+                        // Check for collision using GUID comparison. OnlyExistingAssets, because a prefab
+                        // deleted this session still answers the default lookup.
                         string currentGuid = AssetDatabase.AssetPathToGUID(assetPath);
-                        string existingGuid = AssetDatabase.AssetPathToGUID(newAssetPath);
+                        string existingGuid = AssetDatabase.AssetPathToGUID(newAssetPath, AssetPathToGUIDOptions.OnlyExistingAssets);
 
                         // Collision only if there's a different asset at the new path
                         if (!string.IsNullOrEmpty(existingGuid) && existingGuid != currentGuid)

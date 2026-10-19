@@ -1071,7 +1071,7 @@ namespace MCPForUnity.Editor.Tools
 
         private static bool AssetExists(string path)
         {
-            return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path));
+            return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path, AssetPathToGUIDOptions.OnlyExistingAssets));
         }
 
         private static void EnsureDirectoryExists(string assetPath)
