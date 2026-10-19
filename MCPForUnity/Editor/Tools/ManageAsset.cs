@@ -849,8 +849,8 @@ namespace MCPForUnity.Editor.Tools
         private static bool AssetExists(string sanitizedPath)
         {
             // AssetDatabase APIs are generally preferred over raw File/Directory checks for assets.
-            // Check if it's a known asset GUID.
-            if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(sanitizedPath)))
+            // OnlyExistingAssets: the default overload keeps returning a deleted asset's GUID until the editor closes.
+            if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(sanitizedPath, AssetPathToGUIDOptions.OnlyExistingAssets)))
             {
                 return true;
             }
@@ -868,7 +868,6 @@ namespace MCPForUnity.Editor.Tools
             }
 
             return false;
-            // Alternative: return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(sanitizedPath));
         }
 
         /// <summary>

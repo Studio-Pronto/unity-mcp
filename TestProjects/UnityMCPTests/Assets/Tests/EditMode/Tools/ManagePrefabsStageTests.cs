@@ -1,4 +1,5 @@
 using System.IO;
+using MCPForUnity.Editor.Tools.GameObjects;
 using MCPForUnity.Editor.Tools.Prefabs;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -217,6 +218,44 @@ namespace MCPForUnityTests.Editor.Tools
             {
                 StageUtility.GoToMainStage();
                 SafeDeleteAsset(prefabPath);
+            }
+        }
+
+        [Test]
+        public void RenamePrefabRoot_ToNameDeletedThisSession_RenamesAsset()
+        {
+            // Unity keeps a deleted asset's GUID for its path until the editor closes (#47).
+            string freedPath = CreateTestPrefab("FreedName");
+            Assert.IsTrue(AssetDatabase.DeleteAsset(freedPath));
+            Assert.IsNotEmpty(AssetDatabase.AssetPathToGUID(freedPath),
+                "Precondition: Unity should still return the deleted prefab's GUID for its path this session.");
+            string prefabPath = CreateTestPrefab("RenameRoot");
+
+            try
+            {
+                AssertOpenPrefabStage(prefabPath);
+
+                var result = ToJObject(ManageGameObject.HandleCommand(new JObject
+                {
+                    ["action"] = "modify",
+                    ["target"] = "RenameRoot",
+                    ["search_method"] = "by_name",
+                    ["name"] = "FreedName"
+                }));
+
+                Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+                Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<GameObject>(freedPath),
+                    "The prefab asset should have been renamed into the freed path.");
+            }
+            finally
+            {
+                // The rename dirties the stage; save on close so leaving it never prompts.
+                ManagePrefabs.HandleCommand(new JObject
+                {
+                    ["action"] = "close_prefab_stage",
+                    ["saveBeforeClose"] = true
+                });
+                StageUtility.GoToMainStage();
             }
         }
 
