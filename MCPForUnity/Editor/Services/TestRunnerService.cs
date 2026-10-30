@@ -290,11 +290,12 @@ namespace MCPForUnity.Editor.Services
                 // Mark running immediately so readiness snapshots reflect the busy state even before callbacks fire.
                 TestRunStatus.MarkStarted(mode);
 
+                (string[] testNames, string[] groupNames) = await ResolveNameFiltersAsync(mode, filterOptions).ConfigureAwait(true);
                 var filter = new Filter
                 {
                     testMode = mode,
-                    testNames = filterOptions?.TestNames,
-                    groupNames = filterOptions?.GroupNames,
+                    testNames = testNames,
+                    groupNames = groupNames,
                     categoryNames = filterOptions?.CategoryNames,
                     assemblyNames = filterOptions?.AssemblyNames
                 };
@@ -620,6 +621,27 @@ namespace MCPForUnity.Editor.Services
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// The names a run passes to Unity: its patterns expanded to exact tests (<see cref="TestGroupExpansion"/>), or as
+        /// it gave them when expansion does not apply or the test list is unavailable. Patterns that select nothing stay
+        /// patterns, because Unity reads an empty name list as no filter and would run everything; patterns that select
+        /// everything become no filter at all.
+        /// </summary>
+        private async Task<(string[] testNames, string[] groupNames)> ResolveNameFiltersAsync(
+            TestMode mode, TestFilterOptions filterOptions)
+        {
+            string[] testNames = filterOptions?.TestNames;
+            string[] groupNames = filterOptions?.GroupNames;
+            if (!TestGroupExpansion.Applies(testNames, groupNames)) return (testNames, groupNames);
+
+            ITestAdaptor root = await RetrieveTestRootAsync(mode).ConfigureAwait(true);
+            if (root == null) return (testNames, groupNames);
+
+            string[] names = TestGroupExpansion.Expand(root, groupNames, out int testCount);
+            if (names.Length == 0) return (testNames, groupNames);
+            return names.Length == testCount ? (null, null) : (names, null);
         }
 
         #region Test list helpers
