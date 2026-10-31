@@ -49,6 +49,9 @@ namespace MCPForUnity.Editor.Tools
                 bool includeFailedTests = p.GetBool("includeFailedTests");
 
                 var filterOptions = GetFilterOptions(@params);
+                // Fail-fast, ahead of the scene gate: a run that cannot start must not cost a scene.
+                TestGroupExpansion.ThrowOnInvalidPattern(filterOptions?.GroupNames);
+                TestGroupExpansion.ThrowOnInvalidPattern(filterOptions?.CategoryNames);
                 long initTimeoutMs = p.GetInt("initTimeout") ?? 0;
                 bool discardUntitled = p.GetBool("discardUntitledScenes"); // alias: discard_untitled_scenes
 

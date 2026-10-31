@@ -94,8 +94,8 @@ namespace MCPForUnity.Editor.Services
                 if (!string.IsNullOrEmpty(_currentJobId) && _currentJobId != ownerJobId &&
                     Jobs.TryGetValue(_currentJobId, out var job) && job.Status == TestJobStatus.Running)
                 {
-                    // Its run never started: the request was still waiting for an earlier run and
-                    // died with the previous domain. Fail it now instead of at the init timeout.
+                    // Its run never started: the request was still waiting for an earlier run or the test
+                    // list and died with the previous domain. Fail it now instead of at the init timeout.
                     long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     job.Status = TestJobStatus.Failed;
                     job.Error = "Test job was interrupted by a domain reload before its run started. Re-run the tests.";

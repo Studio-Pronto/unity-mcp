@@ -265,6 +265,20 @@ namespace MCPForUnity.Editor.Services
                     throw new InvalidOperationException("A Unity test run is already in progress.");
                 }
 
+                // Mark running immediately so readiness snapshots reflect the busy state even before callbacks fire.
+                TestRunStatus.MarkStarted(mode);
+
+                // After this wait, everything up to Execute runs in one go. Until then this job owns no run, so another run
+                // ending has nothing of it to finish, and a Play Mode entry keeps the user's own settings.
+                (string[] testNames, string[] groupNames)[] selections =
+                    await ResolveNameFiltersAsync(mode, filterOptions).ConfigureAwait(true);
+                // The wait can outlast the job, through its init timeout or a manual clear.
+                if (TestJobManager.CurrentJobId != requestingJobId)
+                {
+                    McpLog.Warn($"[TestRunnerService] Test job {requestingJobId} was cleared while retrieving the test list; not starting it.");
+                    throw new InvalidOperationException($"Test job {requestingJobId} was cleared before its Unity test run could start.");
+                }
+
                 if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
                 {
                     throw new InvalidOperationException("Cannot start a test run while the Editor is in or entering Play Mode. Stop Play Mode and try again.");
@@ -287,18 +301,15 @@ namespace MCPForUnity.Editor.Services
                 _leafResults.Clear();
                 _trackedJobId = requestingJobId;
                 _runCompletionSource = new TaskCompletionSource<TestRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-                // Mark running immediately so readiness snapshots reflect the busy state even before callbacks fire.
-                TestRunStatus.MarkStarted(mode);
 
-                var filter = new Filter
+                var settings = new ExecutionSettings(selections.Select(selection => new Filter
                 {
                     testMode = mode,
-                    testNames = filterOptions?.TestNames,
-                    groupNames = filterOptions?.GroupNames,
+                    testNames = selection.testNames,
+                    groupNames = selection.groupNames,
                     categoryNames = filterOptions?.CategoryNames,
                     assemblyNames = filterOptions?.AssemblyNames
-                };
-                var settings = new ExecutionSettings(filter);
+                }).ToArray());
 
                 // Save dirty scenes for all test modes to prevent modal dialogs blocking MCP
                 // (Issue #525: EditMode tests were blocked by save dialog)
@@ -620,6 +631,21 @@ namespace MCPForUnity.Editor.Services
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// The names a run passes to Unity, one entry per filter: its patterns as <see cref="TestGroupExpansion"/> rewrites
+        /// them, or as it gave them when that does not apply.
+        /// </summary>
+        private async Task<(string[] testNames, string[] groupNames)[]> ResolveNameFiltersAsync(
+            TestMode mode, TestFilterOptions filterOptions)
+        {
+            string[] testNames = filterOptions?.TestNames;
+            string[] groupNames = filterOptions?.GroupNames;
+            if (!TestGroupExpansion.Applies(testNames, groupNames)) return new[] { (testNames, groupNames) };
+
+            ITestAdaptor root = await RetrieveTestRootAsync(mode).ConfigureAwait(true);
+            return TestGroupExpansion.Expand(root, groupNames);
         }
 
         #region Test list helpers
