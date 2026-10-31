@@ -291,6 +291,13 @@ namespace MCPForUnity.Editor.Services
                 TestRunStatus.MarkStarted(mode);
 
                 (string[] testNames, string[] groupNames) = await ResolveNameFiltersAsync(mode, filterOptions).ConfigureAwait(true);
+                // The wait can outlast the job, through its init timeout or a manual clear.
+                if (TestJobManager.CurrentJobId != requestingJobId)
+                {
+                    McpLog.Warn($"[TestRunnerService] Test job {requestingJobId} was cleared while retrieving the test list; not starting it.");
+                    throw new InvalidOperationException($"Test job {requestingJobId} was cleared before its Unity test run could start.");
+                }
+
                 var filter = new Filter
                 {
                     testMode = mode,
@@ -624,10 +631,8 @@ namespace MCPForUnity.Editor.Services
         }
 
         /// <summary>
-        /// The names a run passes to Unity: its patterns expanded to exact tests (<see cref="TestGroupExpansion"/>), or as
-        /// it gave them when expansion does not apply or the test list is unavailable. Patterns that select nothing stay
-        /// patterns, because Unity reads an empty name list as no filter and would run everything; patterns that select
-        /// everything become no filter at all.
+        /// The names a run passes to Unity: its patterns as <see cref="TestGroupExpansion"/> rewrites them, or as it gave
+        /// them when that does not apply or the test list is unavailable.
         /// </summary>
         private async Task<(string[] testNames, string[] groupNames)> ResolveNameFiltersAsync(
             TestMode mode, TestFilterOptions filterOptions)
@@ -637,11 +642,7 @@ namespace MCPForUnity.Editor.Services
             if (!TestGroupExpansion.Applies(testNames, groupNames)) return (testNames, groupNames);
 
             ITestAdaptor root = await RetrieveTestRootAsync(mode).ConfigureAwait(true);
-            if (root == null) return (testNames, groupNames);
-
-            string[] names = TestGroupExpansion.Expand(root, groupNames, out int testCount);
-            if (names.Length == 0) return (testNames, groupNames);
-            return names.Length == testCount ? (null, null) : (names, null);
+            return root == null ? (testNames, groupNames) : TestGroupExpansion.Expand(root, groupNames);
         }
 
         #region Test list helpers

@@ -376,6 +376,49 @@ namespace MCPForUnityTests.Editor.Services
             Assert.IsFalse(TestRunStatus.IsRunning);
         }
 
+        [UnityTest]
+        public IEnumerator JobFailedWhileRetrievingTheTestList_DoesNotStartUnownedRun()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            AddJob("retrieving");
+            // A pattern sends the run through RetrieveTestList, which answers on a later editor update.
+            var pending = service.RunTestsAsync(TestMode.EditMode, new TestFilterOptions { GroupNames = new[] { "Anything" } });
+            AutoFail("retrieving");
+
+            double deadline = EditorApplication.timeSinceStartup + 30;
+            while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.IsEmpty(scheduled, "A job that failed during retrieval must not start a run nobody owns.");
+            Assert.IsTrue(pending.IsFaulted);
+            Assert.IsFalse(TestRunStatus.IsRunning);
+        }
+
+        [UnityTest]
+        public IEnumerator Patterns_ReachUnityAsTheNamesOfWhatTheyMatch()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            AddJob("patterns");
+            var pending = service.RunTestsAsync(TestMode.EditMode, new TestFilterOptions
+            {
+                GroupNames = new[] { @"^MCPForUnityTests\.Editor\.Services\.TestJobManagerLifecycleTests$", "!NoSuchTest" }
+            });
+
+            double deadline = EditorApplication.timeSinceStartup + 30;
+            while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.AreEqual(1, scheduled.Count);
+            CollectionAssert.AreEqual(new[] { "MCPForUnityTests.Editor.Services.TestJobManagerLifecycleTests" },
+                scheduled[0].filters[0].testNames, "A fixture's pattern must not become the names of its tests.");
+            CollectionAssert.AreEqual(new[] { "!NoSuchTest" }, scheduled[0].filters[0].groupNames);
+
+            service.RunFinished(ResultStub.Suite(new ResultStub("Fixture.Pass", "Passed")));
+            deadline = EditorApplication.timeSinceStartup + 5;
+            while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
+            Assert.IsTrue(pending.IsCompleted);
+        }
+
         [Test]
         public void ReloadWhileJobWaited_FailsJob_InsteadOfCreditingOlderRun()
         {
