@@ -9,16 +9,19 @@ namespace MCPForUnity.Editor.Services
     /// Rewrites the selecting <see cref="TestFilterOptions.GroupNames"/> of a run as exact names. Unity's filter builds a
     /// new regex for every comparison and reads each pattern against the whole test tree, through parents and
     /// descendants: on a project of 11,295 tests the same 92 tests took 177.7 s to run from 60 patterns and 5.7 s from
-    /// their names. A name and a pattern differ only in how they compare, so the names of the nodes a pattern matches
-    /// select what the pattern would, and Unity still decides what a match reaches: the tests below it, a leading
-    /// <c>!</c>, and which <c>[Explicit]</c> tests run.
+    /// their names. On one tree a name and a pattern differ only in how they compare, so the names of the nodes a pattern
+    /// matches select what the pattern would, and Unity still decides what a match reaches: the tests below it, a leading
+    /// <c>!</c>, and which <c>[Explicit]</c> tests run. But the tree read here is the cached test list, and a run can
+    /// build its own, as Test Framework 1.8.0 does on entering Play Mode, where a test case source can yield new cases or
+    /// new names. So a pattern is only replaced by names that are sure to hold.
     /// </summary>
     internal static class TestGroupExpansion
     {
         private const string ExclusionPrefix = "!";
 
-        // A name is a scan of the tree too: on 11,000 tests a pattern that matches little cost 3.3 s and a name 16 ms.
-        // Both grow with the tree, so the ratio holds for any project, and past it the patterns are the faster filter.
+        // A name is a scan of the tree too: on 11,000 tests a pattern that matches little cost 3.3 s and a name 16 ms. Both
+        // grow with the tree, so the ratio holds for any project. This keeps the names well under the pattern they
+        // replace, and a pattern matching more costs less anyway: one matching 10,000 tests cost 2.3 s.
         private const int NamesPerPattern = 100;
 
         // The Test Framework's adaptor adds this to a test whose name repeats a sibling's, inside a closing parenthesis
@@ -32,54 +35,66 @@ namespace MCPForUnity.Editor.Services
         internal static bool Applies(string[] testNames, string[] groupNames) =>
             (testNames == null || testNames.Length == 0)
             && groupNames != null
-            && groupNames.Any(pattern => !pattern.StartsWith(ExclusionPrefix));
+            && groupNames.Any(pattern => !IsExclusion(pattern));
 
         /// <summary>
-        /// The filter to hand Unity for <paramref name="groupNames"/>: the names of the nodes under
-        /// <paramref name="root"/> its selecting patterns match, beside its exclusions, which stay patterns because
-        /// Unity never runs an <c>[Explicit]</c> test in a filter that has one. All the patterns stay when they match
-        /// nothing, as Unity reads an empty list of names as no filter, when they match more than names can beat, or
-        /// when they match a test case without its method. Throws <see cref="System.ArgumentException"/> on a pattern
-        /// that is not a valid regex.
+        /// Throws <see cref="System.ArgumentException"/> on a value of <paramref name="patterns"/> that Unity would fail to
+        /// read as a regex. It reports one only as "An unexpected error happened while running tests", and only once a
+        /// run compares it.
         /// </summary>
-        internal static (string[] testNames, string[] groupNames) Expand(ITestAdaptor root, string[] groupNames)
+        internal static void ThrowOnInvalidPattern(string[] patterns)
         {
-            var patterns = new List<Regex>();
-            var exclusions = new List<string>();
-            foreach (string pattern in groupNames)
-            {
-                if (pattern.StartsWith(ExclusionPrefix))
-                {
-                    // Compiled only to fail here: Unity reports a bad pattern as "An unexpected error happened".
-                    _ = new Regex(pattern.Substring(ExclusionPrefix.Length));
-                    exclusions.Add(pattern);
-                }
-                else
-                {
-                    patterns.Add(new Regex(pattern));
-                }
-            }
-
-            var names = new HashSet<string>();
-            bool nameable = Walk(root, patterns, covered: false, names);
-            if (!nameable || names.Count == 0 || names.Count > patterns.Count * NamesPerPattern) return (null, groupNames);
-            return (names.ToArray(), exclusions.Count > 0 ? exclusions.ToArray() : null);
+            if (patterns == null) return;
+            foreach (string pattern in patterns)
+                _ = new Regex(IsExclusion(pattern) ? pattern.Substring(ExclusionPrefix.Length) : pattern);
         }
 
-        // A match reaches everything below it, so a node under one needs no name and a broad pattern stays a few names.
-        // An [Explicit] node is the exception: Unity runs it for a match on it or below it, never above it. Returns false
-        // on a test case matched without its method: its arguments can differ each time the tree is built, as Unity does
-        // again on entering Play Mode, and its name would then select nothing. A fixture's arguments are taken to hold:
-        // they nearly always do, and giving up on them would lose the speedup for every parameterized fixture.
-        private static bool Walk(ITestAdaptor node, List<Regex> patterns, bool covered, HashSet<string> names)
+        /// <summary>
+        /// What to hand Unity for <paramref name="groupNames"/>, one entry per filter: it runs what any of them selects.
+        /// A selecting pattern becomes the names of the nodes under <paramref name="root"/> it matches. It stays a pattern
+        /// when it matches nothing, as the run's tree can hold what the list does not, when it matches a test case without
+        /// its method, or when it matches more names than it costs, and with no <paramref name="root"/>, as when the test
+        /// list is unavailable. Exclusions stay patterns in every filter, because Unity never runs an <c>[Explicit]</c>
+        /// test in a filter that has one. No filter comes back empty: Unity reads an empty list of names as no filter.
+        /// </summary>
+        internal static (string[] testNames, string[] groupNames)[] Expand(ITestAdaptor root, string[] groupNames)
+        {
+            if (root == null) return new[] { ((string[])null, groupNames) };
+
+            string[] exclusions = groupNames.Where(IsExclusion).ToArray();
+            var names = new HashSet<string>();
+            var patterns = new List<string>();
+            foreach (string pattern in groupNames.Where(pattern => !IsExclusion(pattern)))
+            {
+                var matched = new HashSet<string>();
+                bool nameable = Walk(root, new Regex(pattern), covered: false, matched);
+                if (nameable && matched.Count > 0 && matched.Count <= NamesPerPattern) names.UnionWith(matched);
+                else patterns.Add(pattern);
+            }
+
+            var filters = new List<(string[] testNames, string[] groupNames)>();
+            if (names.Count > 0) filters.Add((names.ToArray(), exclusions.Length > 0 ? exclusions : null));
+            if (patterns.Count > 0) filters.Add((null, patterns.Concat(exclusions).ToArray()));
+            return filters.ToArray();
+        }
+
+        private static bool IsExclusion(string pattern) => pattern.StartsWith(ExclusionPrefix);
+
+        // The names that select what the pattern does. A match reaches everything below it, so a node under one needs no
+        // name and a broad pattern stays a few names. An [Explicit] node is the exception: Unity runs it for a match on it
+        // or below it, never above it. Returns false on a test case matched without its method, the one node whose parent
+        // has a Method: its name can differ each time the tree is built and would then select nothing. A fixture's
+        // arguments are taken to hold: they nearly always do, and giving up on them would lose the speedup for every
+        // parameterized fixture.
+        private static bool Walk(ITestAdaptor node, Regex pattern, bool covered, HashSet<string> names)
         {
             covered = covered && node.RunState != RunState.Explicit;
             if (!covered)
             {
                 string name = FilterName(node);
-                if (patterns.Any(pattern => pattern.IsMatch(name)))
+                if (pattern.IsMatch(name))
                 {
-                    if (!node.IsSuite && node.Arguments?.Length > 0) return false;
+                    if (node.Parent?.Method != null) return false;
                     names.Add(name);
                     covered = true;
                 }
@@ -87,7 +102,7 @@ namespace MCPForUnity.Editor.Services
 
             if (!node.IsSuite) return true;
             foreach (ITestAdaptor child in node.Children)
-                if (!Walk(child, patterns, covered, names))
+                if (!Walk(child, pattern, covered, names))
                     return false;
             return true;
         }

@@ -409,6 +409,7 @@ namespace MCPForUnityTests.Editor.Services
             while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
 
             Assert.AreEqual(1, scheduled.Count);
+            Assert.AreEqual(1, scheduled[0].filters.Length, "Patterns that all became names need no second filter.");
             CollectionAssert.AreEqual(new[] { "MCPForUnityTests.Editor.Services.TestJobManagerLifecycleTests" },
                 scheduled[0].filters[0].testNames, "A fixture's pattern must not become the names of its tests.");
             CollectionAssert.AreEqual(new[] { "!NoSuchTest" }, scheduled[0].filters[0].groupNames);
@@ -417,6 +418,100 @@ namespace MCPForUnityTests.Editor.Services
             deadline = EditorApplication.timeSinceStartup + 5;
             while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
             Assert.IsTrue(pending.IsCompleted);
+        }
+
+        [UnityTest]
+        public IEnumerator PatternsThatCannotBeNamed_ReachUnityBesideTheNames()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            AddJob("beside");
+            var pending = service.RunTestsAsync(TestMode.EditMode, new TestFilterOptions
+            {
+                GroupNames = new[] { @"^MCPForUnityTests\.Editor\.Services\.TestJobManagerLifecycleTests$", "NoSuchTest", "!NoSuchExclusion" },
+                CategoryNames = new[] { "SomeCategory" },
+                AssemblyNames = new[] { "SomeAssembly" }
+            });
+
+            double deadline = EditorApplication.timeSinceStartup + 30;
+            while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.AreEqual(1, scheduled.Count);
+            Filter[] filters = scheduled[0].filters;
+            Assert.AreEqual(2, filters.Length, "A test in the run's tree but not in the list must still reach Unity's filter.");
+            CollectionAssert.AreEqual(new[] { "MCPForUnityTests.Editor.Services.TestJobManagerLifecycleTests" }, filters[0].testNames);
+            CollectionAssert.AreEqual(new[] { "!NoSuchExclusion" }, filters[0].groupNames);
+            Assert.IsNull(filters[1].testNames, "Names beside patterns in one filter would intersect them.");
+            CollectionAssert.AreEqual(new[] { "NoSuchTest", "!NoSuchExclusion" }, filters[1].groupNames);
+            foreach (Filter filter in filters)
+            {
+                Assert.AreEqual(TestMode.EditMode, filter.testMode);
+                CollectionAssert.AreEqual(new[] { "SomeCategory" }, filter.categoryNames, "Unity runs what any filter selects.");
+                CollectionAssert.AreEqual(new[] { "SomeAssembly" }, filter.assemblyNames, "Unity runs what any filter selects.");
+            }
+
+            service.RunFinished(ResultStub.Suite(new ResultStub("Fixture.Pass", "Passed")));
+            deadline = EditorApplication.timeSinceStartup + 5;
+            while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
+            Assert.IsTrue(pending.IsCompleted);
+        }
+
+        [UnityTest]
+        public IEnumerator ARunEndingWhileRetrievingTheTestList_LeavesTheJobToItsOwnRun()
+        {
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            var job = AddJob("retrieving");
+            var pending = service.RunTestsAsync(TestMode.EditMode, new TestFilterOptions { GroupNames = new[] { "Anything" } });
+
+            Assert.IsTrue(TestRunStatus.IsRunning, "Preflight must see the job as busy while it waits.");
+            // A Test Runner window run, or the cleanup error of the run before this one.
+            service.RunFinished(ResultStub.Suite(new ResultStub("Stray.Test", "Passed")));
+            service.OnError("Not this job's run.");
+            Assert.AreEqual(TestJobStatus.Running, job.Status, "A run this job did not start must not finish it.");
+
+            double deadline = EditorApplication.timeSinceStartup + 30;
+            while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
+
+            Assert.AreEqual(1, scheduled.Count, "The job's own run must still start.");
+            service.RunFinished(ResultStub.Suite(new ResultStub("Own.Test", "Passed")));
+            Assert.AreEqual(TestJobStatus.Succeeded, job.Status);
+            Assert.AreEqual("Own.Test", job.Result.Results.Single().FullName);
+
+            deadline = EditorApplication.timeSinceStartup + 5;
+            while (!pending.IsCompleted && EditorApplication.timeSinceStartup < deadline) yield return null;
+            Assert.IsTrue(pending.IsCompleted);
+        }
+
+        [UnityTest]
+        public IEnumerator PlayModeOptions_WaitForTheTestList()
+        {
+            EditorSettings.enterPlayModeOptionsEnabled = false;
+            var service = (TestRunnerService)MCPServiceLocator.Tests;
+            var scheduled = StubScheduler(service);
+            AddJob("options");
+            var pending = service.RunTestsAsync(TestMode.PlayMode, new TestFilterOptions { GroupNames = new[] { "Anything" } });
+
+            Assert.IsFalse(PlayModeOptionsGuard.IsPending, "A Play entry or a reload during the wait must keep the user's own settings.");
+            Assert.IsFalse(EditorSettings.enterPlayModeOptionsEnabled);
+            AutoFail("options");
+
+            double deadline = EditorApplication.timeSinceStartup + 30;
+            while (!pending.IsCompleted && scheduled.Count == 0 && EditorApplication.timeSinceStartup < deadline) yield return null;
+            Assert.IsEmpty(scheduled);
+            Assert.IsTrue(pending.IsFaulted);
+        }
+
+        [Test]
+        public void ReloadWhileRetrievingTheTestList_FailsJob()
+        {
+            var job = AddJob("retrieving");
+
+            RestoreCallbacks(owner: string.Empty);
+
+            Assert.AreEqual(TestJobStatus.Failed, job.Status, "Its request died with the old domain, and no run was recorded to resume.");
+            StringAssert.Contains("domain reload", job.Error);
+            Assert.IsNull(TestJobManager.CurrentJobId);
         }
 
         [Test]
