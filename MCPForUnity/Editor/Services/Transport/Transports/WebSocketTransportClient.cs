@@ -46,6 +46,10 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
         private Task _receiveTask;
         private Task _keepAliveTask;
         private readonly SemaphoreSlim _sendLock = new(1, 1);
+        // Serialises the teardown/connect sections of StartAsync and StopAsync. Callers that drop the
+        // returned Task (reflection-driven editor scripts do this) would otherwise have one StopAsync
+        // interleave with another, and both would race to dispose the same socket and lifecycle CTS.
+        private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
         private Uri _endpointUri;
         private string _sessionId;
@@ -111,61 +115,94 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 }
             }
 
-            await StopAsync();
-
-            _lifecycleCts = new CancellationTokenSource();
-            _endpointUri = BuildWebSocketUri(HttpEndpointUtility.GetBaseUrl());
-            _sessionId = null;
-
-            if (!await EstablishConnectionAsync(_lifecycleCts.Token))
+            await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+            try
             {
-                await StopAsync();
-                return false;
-            }
+                await StopCoreAsync();
 
-            // State is connected but session ID might be pending until 'registered' message
-            _state = TransportState.Connected(TransportDisplayName, sessionId: "pending", details: _endpointUri.ToString());
-            _isConnected = true;
-            return true;
+                var lifecycleCts = new CancellationTokenSource();
+                _lifecycleCts = lifecycleCts;
+                _endpointUri = BuildWebSocketUri(HttpEndpointUtility.GetBaseUrl());
+                _sessionId = null;
+
+                // Use the local, not the field: a concurrent ForceStop may null the field mid-connect.
+                if (!await EstablishConnectionAsync(lifecycleCts.Token))
+                {
+                    await StopCoreAsync();
+                    return false;
+                }
+
+                // State is connected but session ID might be pending until 'registered' message
+                _state = TransportState.Connected(TransportDisplayName, sessionId: "pending", details: _endpointUri.ToString());
+                _isConnected = true;
+                return true;
+            }
+            finally
+            {
+                _lifecycleGate.Release();
+            }
         }
 
         public async Task StopAsync()
         {
-            if (_lifecycleCts == null)
+            // ConfigureAwait(false) is deliberate: Dispose() blocks the calling thread on this task,
+            // so resuming on the editor's synchronization context would deadlock.
+            await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await StopCoreAsync();
+            }
+            finally
+            {
+                _lifecycleGate.Release();
+            }
+        }
+
+        /// <summary>
+        /// Teardown for callers that already hold <see cref="_lifecycleGate"/>.
+        /// Claims each resource with Interlocked.Exchange so a second teardown racing in through the
+        /// ungated, synchronous <see cref="ForceStop"/> is a no-op instead of a double dispose. The
+        /// previous version re-read _lifecycleCts and _socket after its awaits, so whichever call lost
+        /// the race dereferenced a field the winner had already nulled and threw
+        /// NullReferenceException out of StartAsync.
+        /// </summary>
+        private async Task StopCoreAsync()
+        {
+            CancellationTokenSource lifecycleCts = Interlocked.Exchange(ref _lifecycleCts, null);
+            if (lifecycleCts == null)
             {
                 return;
             }
 
             try
             {
-                _lifecycleCts.Cancel();
+                lifecycleCts.Cancel();
             }
             catch { }
 
             await StopConnectionLoopsAsync().ConfigureAwait(false);
 
-            if (_socket != null)
+            ClientWebSocket socket = Interlocked.Exchange(ref _socket, null);
+            if (socket != null)
             {
                 try
                 {
-                    if (_socket.State == WebSocketState.Open || _socket.State == WebSocketState.CloseReceived)
+                    if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
                     {
-                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutdown", CancellationToken.None).ConfigureAwait(false);
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutdown", CancellationToken.None).ConfigureAwait(false);
                     }
                 }
                 catch { }
                 finally
                 {
-                    _socket.Dispose();
-                    _socket = null;
+                    socket.Dispose();
                 }
             }
 
             _isConnected = false;
             _state = TransportState.Disconnected(TransportDisplayName);
 
-            _lifecycleCts.Dispose();
-            _lifecycleCts = null;
+            lifecycleCts.Dispose();
         }
 
         /// <summary>
@@ -180,10 +217,12 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             // and surface it to clients instead of a generic "no_unity_session".
             try { SendBridgeStatusSync("reloading", 300); } catch { }
 
-            try { _lifecycleCts?.Cancel(); } catch { }
+            CancellationTokenSource lifecycleCts = Interlocked.Exchange(ref _lifecycleCts, null);
+            try { lifecycleCts?.Cancel(); } catch { }
             try { _connectionCts?.Cancel(); } catch { }
 
-            if (_socket != null)
+            ClientWebSocket socket = Interlocked.Exchange(ref _socket, null);
+            if (socket != null)
             {
                 try { _socket.Abort(); } catch { }
                 try { _socket.Dispose(); } catch { }
@@ -209,14 +248,15 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 return false;
             }
 
-            if (_lifecycleCts == null)
+            CancellationTokenSource lifecycleCts = _lifecycleCts;
+            if (lifecycleCts == null)
             {
                 return false;
             }
 
             try
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_lifecycleCts.Token);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(lifecycleCts.Token);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
                 await SendPongAsync(timeoutCts.Token).ConfigureAwait(false);
                 return true;
@@ -814,7 +854,8 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             var stackTrace = new System.Diagnostics.StackTrace(true);
             McpLog.Debug($"[WebSocket] HandleSocketClosureAsync called. Reason: {reason}\nStack trace:\n{stackTrace}");
 
-            if (_lifecycleCts == null || _lifecycleCts.IsCancellationRequested)
+            CancellationTokenSource lifecycleCts = _lifecycleCts;
+            if (lifecycleCts == null || lifecycleCts.IsCancellationRequested)
             {
                 return;
             }
@@ -830,7 +871,17 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
 
             await StopConnectionLoopsAsync(awaitTasks: false).ConfigureAwait(false);
 
-            _ = Task.Run(() => AttemptReconnectAsync(_lifecycleCts.Token), CancellationToken.None);
+            // Captured above: a teardown during the await would have nulled the field.
+            CancellationToken reconnectToken;
+            try
+            {
+                reconnectToken = lifecycleCts.Token;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            _ = Task.Run(() => AttemptReconnectAsync(reconnectToken), CancellationToken.None);
         }
 
         private async Task AttemptReconnectAsync(CancellationToken token)
